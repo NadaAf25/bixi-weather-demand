@@ -1,0 +1,5 @@
+model,MAE,RMSE,R2,MAE_%_of_mean
+Baseline (hour x weekend),836.5,1066.5,0.746,27.8
+Ridge regression,723.5,959.3,0.794,24.1
+Random Forest,407.3,626.3,0.912,13.5
+Gradient Boosting,357.6,526.4,0.938,11.9

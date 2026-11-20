@@ -1,0 +1,118 @@
+"""
+01_extract_weather.py
+Download hourly weather observations for Montreal-Trudeau airport from the
+ECCC GeoMet-OGC API and save them to data/processed/weather_hourly.csv.
+
+Usage:
+    py src/01_extract_weather.py
+    py src/01_extract_weather.py --years 2025 2026 --months 4 5 6 7 8
+"""
+import argparse
+import calendar
+import time
+from pathlib import Path
+
+import pandas as pd
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+ROOT = Path(__file__).resolve().parents[1]
+BASE_URL = "https://api.weather.gc.ca/collections/climate-hourly/items"
+STATION_ID = "702S006"   # Montreal/Pierre Elliott Trudeau INTL (automatic station)
+PAGE_SIZE = 1000
+DEFAULT_YEARS = [2026]
+DEFAULT_MONTHS = [4, 5, 6, 7, 8]
+OUT_PATH = ROOT / "data" / "processed" / "weather_hourly.csv"
+
+KEEP_COLUMNS = [
+    "ID", "UTC_DATE", "TEMP", "DEW_POINT_TEMP", "HUMIDEX", "WINDCHILL",
+    "PRECIP_AMOUNT", "RELATIVE_HUMIDITY", "STATION_PRESSURE", "VISIBILITY",
+    "WIND_SPEED", "WIND_DIRECTION", "WEATHER_ENG_DESC",
+]
+
+
+def make_session() -> requests.Session:
+    """HTTP session that automatically retries on network errors, 429 and 5xx."""
+    retry = Retry(total=5, backoff_factor=1.5,
+                  status_forcelist=[429, 500, 502, 503, 504],
+                  allowed_methods=["GET"])
+    session = requests.Session()
+    session.mount("https://", HTTPAdapter(max_retries=retry))
+    return session
+
+
+def fetch_month(session: requests.Session, year: int, month: int) -> list[dict]:
+    """Fetch every hourly observation of one month, following pagination."""
+    last_day = calendar.monthrange(year, month)[1]
+    params = {
+        "CLIMATE_IDENTIFIER": STATION_ID,
+        "datetime": f"{year}-{month:02d}-01/{year}-{month:02d}-{last_day:02d}",
+        "limit": PAGE_SIZE,
+        "offset": 0,
+        "f": "json",
+    }
+    rows, total = [], None
+    while total is None or params["offset"] < total:
+        resp = session.get(BASE_URL, params=params, timeout=60)
+        resp.raise_for_status()
+        payload = resp.json()
+        total = payload["numberMatched"]
+        if not payload["features"]:
+            break
+        rows.extend(f["properties"] for f in payload["features"])
+        params["offset"] += PAGE_SIZE
+        time.sleep(0.3)  # be polite with the API
+    return rows
+
+
+def clean(df: pd.DataFrame) -> pd.DataFrame:
+    """Drop duplicates, sort, and build a correct Montreal local-time column.
+
+    The API's LOCAL_DATE is in fixed standard time (EST) all year, so it is
+    off by one hour during daylight saving time. We start from UTC instead.
+    """
+    df = df[[c for c in KEEP_COLUMNS if c in df.columns]].drop_duplicates("ID")
+    ts_utc = pd.to_datetime(df["UTC_DATE"], utc=True)
+    hour_local = (ts_utc.dt.tz_convert("America/Montreal")
+                        .dt.tz_localize(None))       # wall-clock time, no timezone
+    df = df.assign(ts_utc=ts_utc, hour_local=hour_local).drop(columns=["UTC_DATE"])
+    return df.sort_values("ts_utc").reset_index(drop=True)
+
+
+def report_gaps(df: pd.DataFrame) -> None:
+    full = pd.date_range(df["ts_utc"].min(), df["ts_utc"].max(), freq="h")
+    missing = len(full) - df["ts_utc"].nunique()
+    print(f"{len(df)} observations, {missing} missing hours in the covered range.")
+    print("Missing values (%):")
+    print((df.isna().mean() * 100).round(1).to_string())
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--years", type=int, nargs="+", default=DEFAULT_YEARS)
+    parser.add_argument("--months", type=int, nargs="+", default=DEFAULT_MONTHS)
+    parser.add_argument("--out", type=Path, default=OUT_PATH)
+    args = parser.parse_args()
+
+    session = make_session()
+    all_rows = []
+    for year in args.years:
+        for month in args.months:
+            rows = fetch_month(session, year, month)
+            print(f"{year}-{month:02d}: {len(rows)} observations")
+            all_rows.extend(rows)
+
+    if not all_rows:
+        raise SystemExit("No data downloaded.")
+
+    df = clean(pd.DataFrame(all_rows))
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(args.out, index=False)
+    print(f"File written: {args.out}")
+    report_gaps(df)
+
+
+if __name__ == "__main__":
+    main()

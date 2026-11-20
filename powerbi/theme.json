@@ -1,0 +1,14 @@
+{
+  "name": "BIXI weather",
+  "dataColors": ["#e76f51", "#2a9d8f", "#264653", "#4682b4", "#f4a261", "#8ab17d", "#6d597a", "#b56576"],
+  "background": "#FFFFFF",
+  "foreground": "#264653",
+  "tableAccent": "#2a9d8f",
+  "visualStyles": {
+    "*": {
+      "*": {
+        "title": [{ "fontColor": { "solid": { "color": "#264653" } }, "fontSize": 12 }]
+      }
+    }
+  }
+}

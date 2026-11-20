@@ -1,0 +1,22 @@
+# Local PostgreSQL for the project.
+#   docker compose up -d
+#   py src/08_load_postgres.py
+services:
+  db:
+    image: postgres:16
+    container_name: bixi-postgres
+    environment:
+      POSTGRES_USER: bixi
+      POSTGRES_PASSWORD: bixi      # local demo only: change it if the port is exposed
+      POSTGRES_DB: bixi
+    ports:
+      - "5432:5432"
+    volumes:
+      - bixi_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bixi -d bixi"]
+      interval: 5s
+      retries: 10
+
+volumes:
+  bixi_pgdata:

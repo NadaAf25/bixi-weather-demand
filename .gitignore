@@ -1,0 +1,11 @@
+# Large raw data (download it from BIXI's open data page)
+data/raw/
+*.zip
+# Python
+__pycache__/
+.ipynb_checkpoints/
+.venv/
+# Secrets and local noise
+.env
+.DS_Store
+*.log

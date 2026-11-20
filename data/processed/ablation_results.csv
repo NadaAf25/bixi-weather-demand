@@ -1,0 +1,6 @@
+feature_set,MAE_July,MAE_August,MAE_mean,error_reduction_vs_calendar_%
+Calendar only,1062.5,786.4,924.5,0.0
+Calendar + temperature,451.8,442.2,447.0,51.6
+Calendar + temperature + rain,405.1,396.3,400.7,56.7
+Calendar + all weather,418.2,357.6,387.9,58.0
+All weather only (no calendar),1360.5,1302.6,1331.5,-44.0
