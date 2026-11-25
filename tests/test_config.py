@@ -22,9 +22,8 @@ FORBIDDEN = {
 }
 
 
-def test_all_fourteen_scripts_found():
-    assert [p.name[:2] for p in SCRIPTS] == [f"{i:02d}" for i in range(1, 15)]
-
+def test_all_fifteen_scripts_found():
+    assert [p.name[:2] for p in SCRIPTS] == [f"{i:02d}" for i in range(1, 16)]
 
 def test_every_script_imports_the_config():
     for path in SCRIPTS:

@@ -99,10 +99,34 @@ trips per hour, bias = prediction minus actual).
   too many (896 during the day), and its error is about 2.3 times that of dry hours. In other
   words, it underestimates how much rain reduces demand. This matches the intervals that
   cover only 83% of rainy hours. Rain is rare (161 hours here), so this is a limitation of
-  the training data, not proof of a systematic effect.
+  the training data, not proof of a systematic effect. The next section tests two fixes.
 - **Temperature.** Errors are relatively largest in cool weather (15-20 C: 28% of the
   average, with a bias of +111) and smallest above 25 C (9%). The two coldest bands have
   too few hours (5 and 66) to conclude anything.
+
+### Can the rain error be fixed?
+
+The error analysis shows that the model predicts too many trips when it rains. I tested
+two changes (`src/15_rain_experiment.py`) on the same three rolling folds: forcing rain to
+never increase demand (a monotonic constraint), and adding recent-rain features
+(`rain_3h` and `rained_prev_hour`, built from weather only, never from trips).
+
+| Model (trips/hour) | Bias, rainy hours | Bias, rainy daytime | MAE, rainy hours | MAE, all hours |
+|---|---:|---:|---:|---:|
+| Simulator model (current) | +665 | +896 | 992 | 478 |
+| + monotone rain | +634 | +845 | 981 | 473 |
+| + monotone rain + recent rain | +581 | +787 | 924 | 467 |
+
+- **Both changes help a little, neither fixes it.** The bias on rainy hours falls by 5%
+  with the constraint and by 13% with recent rain, but the model still predicts about 580
+  trips/hour too many when it rains.
+- **There is a cost on dry hours.** Their bias goes from -78 to -90 trips/hour, and the
+  August bias from -47 to -81.
+- **The simulator is unchanged.** The constraint alone improves the overall error by 1%,
+  which does not justify regenerating the scenarios, and recent rain cannot be used by a
+  what-if simulator, which has no rain history.
+- **The cause is not established.** With 161 rainy hours and no significance test, I cannot
+  tell whether the model lacks data or misses something else, such as rain intensity.
 
 ### Do lagged demand features help?
 
@@ -241,10 +265,12 @@ The build steps and every DAX measure are in [`powerbi/BUILD_GUIDE.md`](powerbi/
 | 12 | `12_station_comparison.py` | Compares the airport and McTavish stations (observations, then model error on the same three rolling folds). Needs `weather_mctavish.csv` (see "Run it"). Does not feed the database. |
 | 13 | `13_error_analysis.py` | Pools the out-of-sample errors of the three validation months and summarises MAE, RMSE and bias by time of day, rain and temperature band. Does not feed the database. |
 | 14 | `14_lag_experiment.py` | Tests lagged-demand features (day ahead and one hour ahead) on the same rolling folds as step 9, built by `src/lags.py` from earlier hours only. Does not feed the database. |
+| 15 | `15_rain_experiment.py` | Tests a monotonic constraint on rain and recent-rain features (`src/rain_features.py`, from weather only) on the same rolling folds as step 9, and reports the bias on rainy hours. Does not feed the database. |
 
 All paths, model settings, test months and the what-if grid are defined once in
 `src/config.py`, which every script imports. `src/conformal.py` holds the interval
-margin shared by steps 10 and 11, and `src/lags.py` the lag features of step 14.
+margin shared by steps 10 and 11, `src/lags.py` the lag features of step 14 and
+`src/rain_features.py` the recent-rain features of step 15.
 
 ### Database
 
@@ -259,7 +285,7 @@ hours, and a trip-count reconciliation: 236,330 trips fall before the weather pe
 
 ### Tests
 
-`tests/` holds 36 automatic checks. 33 of them run in a few seconds without internet, the
+`tests/` holds 40 automatic checks. 37 of them run in a few seconds without internet, the
 large BIXI file or a database. The 25 checks of `tests/test_pipeline.py` verify, for example,
 that `features_hourly.csv` has no missing values and unique hours, that the simulator grid
 has exactly 16,632 rows (33 x 3 x 24 x 7), that at 22 °C dry weather beats light rain, which
@@ -269,7 +295,9 @@ interval contains its point forecast. The 5 checks of `tests/test_config.py` ver
 every setting lives in `src/config.py` (no script copies it) and that every dependency is
 pinned to an exact version. The 3 checks of `tests/test_lags.py` verify that lag features
 only use earlier hours and that a missing hour gives a missing value instead of a shifted
-one.
+one. The 4 checks of `tests/test_rain_features.py` verify that the recent-rain features use
+only the current and earlier hours, that a missing hour gives a missing value, and that the
+constrained model never predicts more trips with more rain.
 
 The 3 checks of `tests/test_postgres_integration.py` load the real CSVs into a PostgreSQL 16
 service with `08_load_postgres.py` (twice, to prove that it is idempotent), then verify the
@@ -309,6 +337,7 @@ python src/10_prediction_intervals.py                  # optional: prediction in
 python src/11_scenario_intervals.py                    # intervals for the simulator (needed by step 8)
 python src/13_error_analysis.py                        # optional: errors by hour, rain, temperature
 python src/14_lag_experiment.py                        # optional: lagged-demand features
+python src/15_rain_experiment.py                       # optional: rain bias experiment
 
 # optional: weather station comparison (downloads the McTavish station first)
 python src/01_extract_weather.py --station 7024745 --out data/processed/weather_mctavish.csv
@@ -336,8 +365,8 @@ Then open Power BI Desktop and follow [`powerbi/BUILD_GUIDE.md`](powerbi/BUILD_G
 ## Repository layout
 
 ```
-src/                pipeline scripts 01 to 14, config.py (shared settings), conformal.py, lags.py
-tests/              test_pipeline.py, test_config.py, test_lags.py, test_postgres_integration.py, conftest.py (36 checks)
+src/                pipeline scripts 01 to 15, config.py (shared settings), conformal.py, lags.py, rain_features.py
+tests/              test_pipeline.py, test_config.py, test_lags.py, test_rain_features.py, test_postgres_integration.py, conftest.py (40 checks)
 .github/workflows/  tests.yml (runs the tests on every push, with a PostgreSQL 16 service)
 sql/                schema.sql (tables, constraints, views)
 powerbi/            build guide, DAX measures, theme, bixi_weather.pbix
@@ -391,9 +420,10 @@ requirements-dev.txt
   final model's forecast, were not measured again.
 - **The model overestimates demand in the rain.** On rainy hours it predicts 665 trips/hour
   too many on average (896 during the day), and its error is about 2.3 times that of dry
-  hours. The simulator's rain scenarios probably understate the real drop in demand, and the
-  intervals are too narrow in the rain (83% coverage instead of 90%). Only 161 rainy hours
-  are available for the three validation months.
+  hours. A monotonic constraint and recent-rain features reduce this bias by only 5% and
+  13%, so the simulator's rain scenarios probably still understate the real drop in demand,
+  and its intervals are too narrow in the rain (83% coverage instead of 90%). Only 161 rainy
+  hours are available for the three validation months.
 - **The lag experiment is small.** Three feature sets, no tuning, training windows of 1,295
   to 2,710 hours, and 263 hours dropped for lack of history. The result "lags do not help a
   day ahead" may change with more data; it is not proven for other seasons.
@@ -403,8 +433,9 @@ requirements-dev.txt
 - **The database tests use the project's own CSVs.** The integration test loads the real
   outputs into an empty PostgreSQL, but it does not test a load that fails halfway or a
   different schema version.
-- **No hyperparameter tuning.** The typical error is about 358
-  trips per hour, which is large for quiet hours and small for peak hours.
+- **No hyperparameter tuning.** Every model uses the same fixed Gradient Boosting settings
+  (`GB_PARAMS` in `src/config.py`), so a tuned model might do better. The typical error on
+  August is 358 trips per hour, which is large for quiet hours and small for peak hours.
 
 ## Data sources
 

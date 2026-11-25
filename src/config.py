@@ -31,6 +31,7 @@ INTERVAL_RESULTS_CSV = PROCESSED / "interval_results.csv"
 STATION_COMPARISON_CSV = PROCESSED / "station_comparison.csv"
 ERROR_ANALYSIS_CSV = PROCESSED / "error_analysis.csv"
 LAG_RESULTS_CSV = PROCESSED / "lag_results.csv"
+RAIN_RESULTS_CSV = PROCESSED / "rain_results.csv"
 
 # ---------------------------------------------------------------------------
 # Weather source (ECCC GeoMet-OGC API)
@@ -76,6 +77,10 @@ SIMULATOR_FEATURES = CALENDAR + ["TEMP", "PRECIP_AMOUNT"]
 
 # Gradient Boosting settings shared by every script
 GB_PARAMS = dict(max_iter=300, learning_rate=0.05, random_state=SEED)
+
+# Rain experiment (15_rain_experiment.py, rain_features.py)
+RAIN_WINDOW_HOURS = 3            # rain_3h = this hour and the 2 before
+RAIN_COLUMNS = ["PRECIP_AMOUNT", "rain_3h", "rained_prev_hour"]   # more rain may only lower demand
 
 # Time-based protocol (months of 2026; no shuffling anywhere)
 FINAL_TEST_MONTH = 8             # August: the final test month
