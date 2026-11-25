@@ -180,7 +180,7 @@ docker-compose.yml
 
 ## Data sources
 
-- Trips: BIXI Montréal open data (not redistributed here; download it from BIXI's website).
+- Trips: BIXI Montréal open data, https://bixi.com/fr/donnees-ouvertes/ (not redistributed here; download the 2026 file from this page and put it in `data/raw/`).
 - Weather: Environment and Climate Change Canada, GeoMet-OGC API, `climate-hourly`
   collection, station Montréal/Pierre Elliott Trudeau INTL.
 
