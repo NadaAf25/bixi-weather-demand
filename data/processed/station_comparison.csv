@@ -1,0 +1,7 @@
+station,fold,n_test,mae,rmse,bias,mae_rainy
+airport,June,719,638.4,885.2,-42.0,1202.5
+airport,July,744,405.3,635.2,16.5,910.2
+airport,August,743,396.3,595.9,-46.5,650.5
+mctavish,June,719,631.4,885.7,-67.8,1256.3
+mctavish,July,744,408.6,654.3,5.2,938.3
+mctavish,August,743,399.0,616.7,-50.2,501.5

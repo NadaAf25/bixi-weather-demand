@@ -1,11 +1,15 @@
 """
 01_extract_weather.py
-Download hourly weather observations for Montreal-Trudeau airport from the
-ECCC GeoMet-OGC API and save them to data/processed/weather_hourly.csv.
+Download hourly weather observations from the ECCC GeoMet-OGC API and save them
+to a CSV. By default: Montreal-Trudeau airport -> data/processed/weather_hourly.csv.
 
 Usage:
     py src/01_extract_weather.py
     py src/01_extract_weather.py --years 2025 2026 --months 4 5 6 7 8
+    py src/01_extract_weather.py --station 7024745 --out data/processed/weather_mctavish.csv
+
+Always pass --out when you use --station, otherwise weather_hourly.csv (the input
+of the whole pipeline) is overwritten with another station's data.
 """
 import argparse
 import calendar
@@ -31,11 +35,12 @@ def make_session() -> requests.Session:
     return session
 
 
-def fetch_month(session: requests.Session, year: int, month: int) -> list[dict]:
+def fetch_month(session: requests.Session, year: int, month: int,
+                station: str = STATION_ID) -> list[dict]:
     """Fetch every hourly observation of one month, following pagination."""
     last_day = calendar.monthrange(year, month)[1]
     params = {
-        "CLIMATE_IDENTIFIER": STATION_ID,
+        "CLIMATE_IDENTIFIER": station,
         "datetime": f"{year}-{month:02d}-01/{year}-{month:02d}-{last_day:02d}",
         "limit": API_PAGE_SIZE,
         "offset": 0,
@@ -82,6 +87,8 @@ def main() -> None:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--years", type=int, nargs="+", default=DEFAULT_YEARS)
     parser.add_argument("--months", type=int, nargs="+", default=DEFAULT_MONTHS)
+    parser.add_argument("--station", default=STATION_ID,
+                        help="ECCC climate identifier (default: Trudeau airport)")
     parser.add_argument("--out", type=Path, default=WEATHER_CSV)
     args = parser.parse_args()
 
@@ -89,7 +96,7 @@ def main() -> None:
     all_rows = []
     for year in args.years:
         for month in args.months:
-            rows = fetch_month(session, year, month)
+            rows = fetch_month(session, year, month, args.station)
             print(f"{year}-{month:02d}: {len(rows)} observations")
             all_rows.extend(rows)
 

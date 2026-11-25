@@ -19,6 +19,7 @@ weather from Montreal-Trudeau airport (3,669 hours).
 | How much does weather improve a forecast? | A model that knows only the hour, day of week and holidays has a mean error of **925 trips/hour**. Adding **temperature** alone cuts it by **52%**, adding **rain** brings it to **57%**, and all weather variables to **58%** (388 trips/hour). |
 | Is weather enough on its own? | No. Weather without calendar features is *worse* than calendar alone (1,332 vs 925): the commute rhythm explains the shape of the day, the weather explains how high the peaks are. |
 | Best model? | Gradient Boosting: **MAE 358 trips/hour (11.9% of the average hour), R² 0.94** on August, a month the model never saw. A "typical hour x weekday/weekend" baseline gets 837. |
+| Does the weather station matter? | Not materially. Downtown (McTavish) and the airport give the same mean error over three test months: **480.0 vs 479.7 trips/hour**. |
 
 ![Weather ablation](figures/7_weather_ablation.png)
 
@@ -66,6 +67,35 @@ The same method gives the intervals shown in the Power BI simulator, as a lower-
 and an upper-bound line on the hourly curve (see below).
 
 ![Prediction intervals](figures/10_prediction_intervals.png)
+
+### Does the weather station matter?
+
+The model uses a single station, Montreal-Trudeau airport (about 14 km from downtown).
+To test this choice, I downloaded the McTavish station (downtown, about 1 km from the
+centre) and compared both stations over April to August 2026
+(`src/12_station_comparison.py`).
+
+**Observations.** Hourly temperatures are almost identical (correlation 0.99, mean
+absolute difference 0.64 °C, maximum 7.6 °C). Rain differs more: McTavish records 350
+rainy hours against 303 at the airport (575 mm against 533 mm), and the two stations
+agree on whether it rains in 95.3% of the hours.
+
+**Model.** Same model (calendar + temperature + rain), same rolling-origin folds; only
+the weather columns change.
+
+| Station | MAE June | MAE July | MAE August | Mean MAE | Mean RMSE | Mean bias |
+|---|---:|---:|---:|---:|---:|---:|
+| Airport | 638.4 | 405.3 | 396.3 | 480.0 | 705.4 | -24.0 |
+| McTavish | 631.4 | 408.6 | 399.0 | 479.7 | 718.9 | -37.6 |
+
+(trips per hour. The airport row differs by less than 0.5 from the validation table above
+because the two scripts do not build the training set identically.)
+
+**Conclusion.** The station choice does not materially change the performance: the mean
+MAE differs by 0.3 trips/hour, and the sign of the difference changes from one month to
+the next. The airport station is kept. The error on rainy hours is too noisy to compare
+stations (303 to 350 rainy hours in total, fewer in each fold), and there is no
+significance test.
 
 ### The simulator
 
@@ -132,7 +162,7 @@ The build steps and every DAX measure are in [`powerbi/BUILD_GUIDE.md`](powerbi/
 
 | Step | Script | What it does |
 |---|---|---|
-| 1 | `01_extract_weather.py` | Downloads hourly observations from the ECCC GeoMet API (pagination, automatic retries). Rebuilds Montreal local time from UTC, because the API's local timestamp ignores daylight saving. |
+| 1 | `01_extract_weather.py` | Downloads hourly observations from the ECCC GeoMet API (pagination, automatic retries). Rebuilds Montreal local time from UTC, because the API's local timestamp ignores daylight saving. Takes the airport station by default; `--station` and `--out` fetch another one without touching the pipeline's input. |
 | 2 | `02_aggregate_bixi.py` | Streams the ~2 GB BIXI file in 1M-row chunks, drops trips under 1 minute or over 24 hours, counts trips per hour. Reads straight from the ZIP. |
 | 3 | `03_build_features.py` | Joins trips and weather, adds hour, weekday, weekend and Quebec holiday flags. An hour without any trip becomes 0, not missing. |
 | 4 | `04_explore.py` | Exploratory charts 1 to 4. |
@@ -143,6 +173,7 @@ The build steps and every DAX measure are in [`powerbi/BUILD_GUIDE.md`](powerbi/
 | 9 | `09_validate_models.py` | Rolling-origin validation on three test months (June, July, August) against two naive baselines. Does not feed the database. |
 | 10 | `10_prediction_intervals.py` | 90% prediction intervals (conformalised quantile regression) and a check of their real coverage on August. Does not feed the database. |
 | 11 | `11_scenario_intervals.py` | Adds a 90% prediction interval (low and high bound) to each of the 16,632 scenarios, with the same method as step 10, and writes `scenario_intervals.csv`, which step 8 loads. |
+| 12 | `12_station_comparison.py` | Compares the airport and McTavish stations (observations, then model error on the same three rolling folds). Needs `weather_mctavish.csv` (see "Run it"). Does not feed the database. |
 
 All paths, model settings, test months and the what-if grid are defined once in
 `src/config.py`, which every script imports. `src/conformal.py` holds the interval
@@ -199,11 +230,18 @@ python src/09_validate_models.py                       # optional: rolling valid
 python src/10_prediction_intervals.py                  # optional: prediction intervals
 python src/11_scenario_intervals.py                    # intervals for the simulator (needed by step 8)
 
+# optional: weather station comparison (downloads the McTavish station first)
+python src/01_extract_weather.py --station 7024745 --out data/processed/weather_mctavish.csv
+python src/12_station_comparison.py
+
 docker compose up -d                                   # local PostgreSQL 16
 python src/08_load_postgres.py                         # or --dsn / DATABASE_URL for another server
 
 pip install -r requirements-dev.txt && python -m pytest   # optional: run the automatic tests
 ```
+
+Always pass `--out` when you use `--station`: without it, `weather_hourly.csv`, the input
+of the whole pipeline, would be overwritten with another station's data.
 
 Already have PostgreSQL installed? Create a `bixi` user and database, then pass the
 connection string (adjust the port if yours is not 5432):
@@ -218,7 +256,7 @@ Then open Power BI Desktop and follow [`powerbi/BUILD_GUIDE.md`](powerbi/BUILD_G
 ## Repository layout
 
 ```
-src/                pipeline scripts 01 to 11, config.py (shared settings), conformal.py
+src/                pipeline scripts 01 to 12, config.py (shared settings), conformal.py
 tests/              test_pipeline.py, test_config.py, conftest.py (30 automatic checks)
 .github/workflows/  tests.yml (runs the tests on every push)
 sql/                schema.sql (tables, constraints, views)
@@ -256,8 +294,11 @@ requirements-dev.txt
 - **One season, one year.** Only April to August 2026 is covered: nothing about autumn, winter
   or other years. BIXI also ramps up through April (chart 4), so part of the "temperature
   effect" is really seasonality and network growth. A longer history would separate them.
-- **One weather station**, at the airport rather than downtown, and trips are counted for the
-  whole system, not per station or neighbourhood.
+- **One weather station for the whole city.** The pipeline uses the airport, not downtown.
+  Comparing it with McTavish (downtown) changed the mean error by 0.3 trips/hour, so the choice
+  does not matter for this model, but that was tested on one season and without a significance
+  test. Trips are counted for the whole system, not per station or neighbourhood, so local
+  weather differences between neighbourhoods are not captured.
 - **Feature importance is correlated.** In chart 6 humidity ranks above temperature, which
   probably reflects that it tracks rain and time of day. The ablation study is the cleaner
   test of what each variable adds.
@@ -278,6 +319,7 @@ requirements-dev.txt
 
 - Trips: BIXI Montréal open data, https://bixi.com/fr/donnees-ouvertes/ (not redistributed here; download the 2026 file from this page and put it in `data/raw/`).
 - Weather: Environment and Climate Change Canada, GeoMet-OGC API, `climate-hourly`
-  collection, station Montréal/Pierre Elliott Trudeau INTL.
+  collection, station Montréal/Pierre Elliott Trudeau INTL (used by the pipeline) and station
+  McTavish (used only for the station comparison).
 
 Please check each provider's terms of use before reusing the data.

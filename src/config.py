@@ -19,6 +19,7 @@ FIGURES = ROOT / "figures"
 SCHEMA_SQL = ROOT / "sql" / "schema.sql"
 
 WEATHER_CSV = PROCESSED / "weather_hourly.csv"
+WEATHER_MCTAVISH_CSV = PROCESSED / "weather_mctavish.csv"
 BIXI_CSV = PROCESSED / "bixi_hourly.csv"
 FEATURES_CSV = PROCESSED / "features_hourly.csv"
 MODEL_RESULTS_CSV = PROCESSED / "model_results.csv"
@@ -27,12 +28,14 @@ SCENARIOS_CSV = PROCESSED / "scenario_predictions.csv"
 SCENARIO_INTERVALS_CSV = PROCESSED / "scenario_intervals.csv"
 VALIDATION_CSV = PROCESSED / "validation_results.csv"
 INTERVAL_RESULTS_CSV = PROCESSED / "interval_results.csv"
+STATION_COMPARISON_CSV = PROCESSED / "station_comparison.csv"
 
 # ---------------------------------------------------------------------------
 # Weather source (ECCC GeoMet-OGC API)
 # ---------------------------------------------------------------------------
 API_URL = "https://api.weather.gc.ca/collections/climate-hourly/items"
 STATION_ID = "702S006"   # Montreal/Pierre Elliott Trudeau INTL (automatic station)
+STATION_MCTAVISH = "7024745"   # McTavish (downtown, about 1 km from the city centre)
 API_PAGE_SIZE = 1000
 DEFAULT_YEARS = [2026]
 DEFAULT_MONTHS = [4, 5, 6, 7, 8]
