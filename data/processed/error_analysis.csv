@@ -1,0 +1,16 @@
+group,section,n_hours,mean_trips,MAE,RMSE,bias,MAE_pct_of_mean
+All test hours (June-August),Overall,2206,2965.7,478.1,714.8,-23.6,16.1
+Night (0-5 am),Time of day,552,648.9,165.6,254.2,-25.1,25.5
+Morning (6-9 am),Time of day,368,2414.2,469.9,709.9,92.2,19.5
+Midday (10 am-3 pm),Time of day,552,3575.4,524.9,778.8,-61.3,14.7
+Evening rush (4-6 pm),Time of day,275,6217.4,752.4,984.2,-33.4,12.1
+Evening (7-11 pm),Time of day,459,3512.9,639.9,815.0,-63.8,18.2
+Dry,Rain (all hours),2045,3065.9,437.7,648.2,-77.8,14.3
+Rain,Rain (all hours),161,1693.7,991.8,1290.0,664.8,58.6
+Dry,Rain (daytime 7 am-9 pm),1275,4235.2,550.4,758.3,-105.0,13.0
+Rain,Rain (daytime 7 am-9 pm),103,2277.5,1340.8,1567.8,895.6,58.9
+< 10 C,Temperature,5,359.8,144.1,180.9,-80.3,40.0
+10-15 C,Temperature,66,954.3,255.0,425.8,-220.4,26.7
+15-20 C,Temperature,681,1704.8,471.9,758.6,110.6,27.7
+20-25 C,Temperature,982,3028.4,516.7,747.2,-74.5,17.1
+>= 25 C,Temperature,472,4963.6,441.5,608.9,-83.3,8.9

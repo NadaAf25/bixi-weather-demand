@@ -29,6 +29,7 @@ SCENARIO_INTERVALS_CSV = PROCESSED / "scenario_intervals.csv"
 VALIDATION_CSV = PROCESSED / "validation_results.csv"
 INTERVAL_RESULTS_CSV = PROCESSED / "interval_results.csv"
 STATION_COMPARISON_CSV = PROCESSED / "station_comparison.csv"
+ERROR_ANALYSIS_CSV = PROCESSED / "error_analysis.csv"
 
 # ---------------------------------------------------------------------------
 # Weather source (ECCC GeoMet-OGC API)

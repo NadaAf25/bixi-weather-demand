@@ -68,6 +68,42 @@ and an upper-bound line on the hourly curve (see below).
 
 ![Prediction intervals](figures/10_prediction_intervals.png)
 
+### Where does the model make its errors?
+
+The errors of the three validation months (June, July, August; 2,206 hours) are pooled and
+split by time of day, rain and temperature (`src/13_error_analysis.py`, simulator model,
+trips per hour, bias = prediction minus actual).
+
+| Group | Hours | Average real trips | MAE | RMSE | Bias | MAE as % of average |
+|---|---:|---:|---:|---:|---:|---:|
+| **All test hours** | 2,206 | 2,966 | 478 | 715 | -24 | 16.1% |
+| Night (0-5 am) | 552 | 649 | 166 | 254 | -25 | 25.5% |
+| Morning (6-9 am) | 368 | 2,414 | 470 | 710 | +92 | 19.5% |
+| Midday (10 am-3 pm) | 552 | 3,575 | 525 | 779 | -61 | 14.7% |
+| Evening rush (4-6 pm) | 275 | 6,217 | 752 | 984 | -33 | 12.1% |
+| Evening (7-11 pm) | 459 | 3,513 | 640 | 815 | -64 | 18.2% |
+| Dry | 2,045 | 3,066 | 438 | 648 | -78 | 14.3% |
+| **Rain** | 161 | 1,694 | 992 | 1,290 | **+665** | 58.6% |
+| Dry, daytime (7 am-9 pm) | 1,275 | 4,235 | 550 | 758 | -105 | 13.0% |
+| **Rain, daytime (7 am-9 pm)** | 103 | 2,278 | 1,341 | 1,568 | **+896** | 58.9% |
+| Below 10 C (5 hours only) | 5 | 360 | 144 | 181 | -80 | 40.0% |
+| 10-15 C | 66 | 954 | 255 | 426 | -220 | 26.7% |
+| 15-20 C | 681 | 1,705 | 472 | 759 | +111 | 27.7% |
+| 20-25 C | 982 | 3,028 | 517 | 747 | -75 | 17.1% |
+| 25 C and above | 472 | 4,964 | 442 | 609 | -83 | 8.9% |
+
+- **Time of day.** The largest absolute error is at the evening rush (752 trips/hour), where
+  demand is highest; relative to demand it is the smallest (12%). At night the error is small
+  in absolute terms (166) but represents 25% of the few trips there are.
+- **Rain is the weak spot.** On rainy hours the model predicts on average 665 trips/hour
+  too many (896 during the day), and its error is about 2.3 times that of dry hours. In other
+  words, it underestimates how much rain reduces demand. This matches the intervals that
+  cover only 83% of rainy hours. Rain is rare (161 hours here), so this is a limitation of
+  the training data, not proof of a systematic effect.
+- **Temperature.** Errors are relatively largest in cool weather (15-20 C: 28% of the
+  average, with a bias of +111) and smallest above 25 C (9%). The two coldest bands have
+  too few hours (5 and 66) to conclude anything.
+
 ### Does the weather station matter?
 
 The model uses a single station, Montreal-Trudeau airport (about 14 km from downtown).
@@ -89,7 +125,7 @@ the weather columns change.
 | McTavish | 631.4 | 408.6 | 399.0 | 479.7 | 718.9 | -37.6 |
 
 (trips per hour. The airport row differs by less than 0.5 from the validation table above
-because the two scripts do not build the training set identically.)
+because that script clips negative predictions to zero and this one does not.)
 
 **Conclusion.** The station choice does not materially change the performance: the mean
 MAE differs by 0.3 trips/hour, and the sign of the difference changes from one month to
@@ -174,6 +210,7 @@ The build steps and every DAX measure are in [`powerbi/BUILD_GUIDE.md`](powerbi/
 | 10 | `10_prediction_intervals.py` | 90% prediction intervals (conformalised quantile regression) and a check of their real coverage on August. Does not feed the database. |
 | 11 | `11_scenario_intervals.py` | Adds a 90% prediction interval (low and high bound) to each of the 16,632 scenarios, with the same method as step 10, and writes `scenario_intervals.csv`, which step 8 loads. |
 | 12 | `12_station_comparison.py` | Compares the airport and McTavish stations (observations, then model error on the same three rolling folds). Needs `weather_mctavish.csv` (see "Run it"). Does not feed the database. |
+| 13 | `13_error_analysis.py` | Pools the out-of-sample errors of the three validation months and summarises MAE, RMSE and bias by time of day, rain and temperature band. Does not feed the database. |
 
 All paths, model settings, test months and the what-if grid are defined once in
 `src/config.py`, which every script imports. `src/conformal.py` holds the interval
@@ -229,6 +266,7 @@ python src/07_build_scenarios.py
 python src/09_validate_models.py                       # optional: rolling validation
 python src/10_prediction_intervals.py                  # optional: prediction intervals
 python src/11_scenario_intervals.py                    # intervals for the simulator (needed by step 8)
+python src/13_error_analysis.py                        # optional: errors by hour, rain, temperature
 
 # optional: weather station comparison (downloads the McTavish station first)
 python src/01_extract_weather.py --station 7024745 --out data/processed/weather_mctavish.csv
@@ -256,7 +294,7 @@ Then open Power BI Desktop and follow [`powerbi/BUILD_GUIDE.md`](powerbi/BUILD_G
 ## Repository layout
 
 ```
-src/                pipeline scripts 01 to 12, config.py (shared settings), conformal.py
+src/                pipeline scripts 01 to 13, config.py (shared settings), conformal.py
 tests/              test_pipeline.py, test_config.py, conftest.py (30 automatic checks)
 .github/workflows/  tests.yml (runs the tests on every push)
 sql/                schema.sql (tables, constraints, views)
@@ -307,6 +345,11 @@ requirements-dev.txt
 - **Intervals are too optimistic in the rain** (83% coverage instead of 90%), and they are
   checked on a single month (August). The simulator's own intervals, stretched to contain the
   final model's forecast, were not measured again.
+- **The model overestimates demand in the rain.** On rainy hours it predicts 665 trips/hour
+  too many on average (896 during the day), and its error is about 2.3 times that of dry
+  hours. The simulator's rain scenarios probably understate the real drop in demand, and the
+  intervals are too narrow in the rain (83% coverage instead of 90%). Only 161 rainy hours
+  are available for the three validation months.
 - **Short validation history.** Only three successive test months exist (June to August),
   and June is scored with just two months of training data. More years of data would allow
   a longer rolling validation.
