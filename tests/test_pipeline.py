@@ -169,3 +169,19 @@ def test_csv_columns_match_the_sql_tables(table):
 def test_scenario_view_exposes_rain_order():
     view = re.search(r"CREATE VIEW vw_scenarios AS(.*?);", SCHEMA, re.S).group(1)
     assert "AS rain_order" in view
+
+
+# ------------------------------------------------- scenario prediction intervals
+def test_scenario_intervals_surround_the_forecast():
+    intervals = pd.read_csv(PROCESSED / "scenario_intervals.csv")
+    assert len(intervals) == 33 * 3 * 24 * 7
+    assert (intervals["lower_trips"] >= 0).all()
+    assert (intervals["lower_trips"] <= intervals["predicted_trips"]).all()
+    assert (intervals["predicted_trips"] <= intervals["upper_trips"]).all()
+
+
+def test_scenario_intervals_keep_the_point_forecasts():
+    intervals = pd.read_csv(PROCESSED / "scenario_intervals.csv")
+    base = pd.read_csv(PROCESSED / "scenario_predictions.csv")
+    assert (intervals["predicted_trips"].to_numpy()
+            == base["predicted_trips"].to_numpy()).all()

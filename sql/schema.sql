@@ -74,7 +74,8 @@ CREATE TABLE ablation_results (         -- 06_weather_ablation.py
     error_reduction_vs_calendar_pct NUMERIC(5,1) NOT NULL
 );
 
--- What-if grid scored by the model (07_build_scenarios.py). 16,632 rows.
+-- What-if grid scored by the model (07_build_scenarios.py), with a 90%
+-- prediction interval added by 11_scenario_intervals.py. 16,632 rows.
 CREATE TABLE scenario_predictions (
     temp_c           SMALLINT NOT NULL,
     rain_label       TEXT     NOT NULL,
@@ -86,6 +87,8 @@ CREATE TABLE scenario_predictions (
     predicted_trips  INTEGER  NOT NULL CHECK (predicted_trips >= 0),
     n_similar_hours  INTEGER  NOT NULL,     -- real hours that resemble this scenario
     is_reliable      SMALLINT NOT NULL CHECK (is_reliable IN (0, 1)),
+    lower_trips      INTEGER  NOT NULL CHECK (lower_trips >= 0),   -- 90% interval, low bound
+    upper_trips      INTEGER  NOT NULL CHECK (upper_trips >= 0),   -- 90% interval, high bound
     PRIMARY KEY (temp_c, rain_label, hour, day_of_week)
 );
 
@@ -162,6 +165,8 @@ SELECT
     day_name,
     CASE WHEN is_weekend = 1 THEN 'Weekend' ELSE 'Weekday' END AS day_type,
     predicted_trips,
+    lower_trips,
+    upper_trips,
     n_similar_hours,
     is_reliable                                                 -- 1 / 0 (easy to use in DAX)
 FROM scenario_predictions;

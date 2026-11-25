@@ -56,7 +56,8 @@ def build_jobs() -> dict[str, pd.DataFrame]:
             PROCESSED / "ablation_results.csv",
             {"error_reduction_vs_calendar_%": "error_reduction_vs_calendar_pct",
              "mae_july": "mae_july", "mae_august": "mae_august"}),
-        "scenario_predictions": load_plain(PROCESSED / "scenario_predictions.csv"),
+        # scenarios + 90% prediction interval (11_scenario_intervals.py)
+        "scenario_predictions": load_plain(PROCESSED / "scenario_intervals.csv"),
     }
 
 
