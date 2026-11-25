@@ -1,5 +1,7 @@
 # BIXI x Weather: how much does the weather drive bike-share demand in Montreal?
 
+[![tests](https://github.com/NadaAf25/bixi-weather-demand/actions/workflows/tests.yml/badge.svg)](https://github.com/NadaAf25/bixi-weather-demand/actions/workflows/tests.yml)
+
 An end-to-end data project: from a 2 GB open-data file and a weather API to a PostgreSQL
 database, a machine-learning model and a Power BI dashboard where you can ask
 *"if it's 22 °C and raining, how many trips will there be?"*
@@ -127,6 +129,21 @@ rolls back everything if a check fails. Checks include row counts against the CS
 hours, and a trip-count reconciliation: 236,330 trips fall before the weather period starts
 (January to March) and 11,298 fall in three hours with no weather measurement.
 
+### Tests
+
+`tests/test_pipeline.py` holds 23 automatic checks that run in a few seconds, without internet,
+the large BIXI file or a database. They verify, for example, that `features_hourly.csv` has no
+missing values and unique hours, that the simulator grid has exactly 16,632 rows (33 x 3 x 24 x 7),
+that at 22 °C dry weather beats light rain, which beats heavy rain, that the columns of every CSV
+match the tables of `schema.sql`, and that the model beats the naive baselines in all three
+validation months. A GitHub Actions workflow (`.github/workflows/tests.yml`) runs them on every
+push, which is what the badge at the top of this page shows.
+
+```bash
+pip install pytest
+python -m pytest
+```
+
 ## Run it
 
 ```bash
@@ -147,6 +164,8 @@ python src/10_prediction_intervals.py                  # optional: prediction in
 
 docker compose up -d                                   # local PostgreSQL 16
 python src/08_load_postgres.py                         # or --dsn / DATABASE_URL for another server
+
+pip install pytest && python -m pytest                 # optional: run the automatic tests
 ```
 
 Already have PostgreSQL installed? Create a `bixi` user and database, then pass the
@@ -162,15 +181,18 @@ Then open Power BI Desktop and follow [`powerbi/BUILD_GUIDE.md`](powerbi/BUILD_G
 ## Repository layout
 
 ```
-src/        pipeline scripts 01 to 10
-sql/        schema.sql (tables, constraints, views)
-powerbi/    build guide, DAX measures, theme, bixi_weather.pbix
+src/                pipeline scripts 01 to 10
+tests/              test_pipeline.py (23 automatic checks)
+.github/workflows/  tests.yml (runs the tests on every push)
+sql/                schema.sql (tables, constraints, views)
+powerbi/            build guide, DAX measures, theme, bixi_weather.pbix
 data/
-  raw/          BIXI file (not in git)
-  processed/    all intermediate and result CSVs
-figures/    charts 1 to 8
-docs/       architecture diagram and Power BI screenshots
+  raw/              BIXI file (not in git)
+  processed/        all intermediate and result CSVs
+figures/            charts 1 to 10
+docs/               architecture diagram and Power BI screenshots
 docker-compose.yml
+requirements.txt
 ```
 
 ## Design choices worth knowing
@@ -202,6 +224,8 @@ docker-compose.yml
 - **Short validation history.** Only three successive test months exist (June to August),
   and June is scored with just two months of training data. More years of data would allow
   a longer rolling validation.
+- **Tests cover the data and the schema, not the database load.** The automatic tests do not
+  start PostgreSQL, so `08_load_postgres.py` is checked by its own load-time quality checks.
 - **No hyperparameter tuning.** The typical error is about 358
   trips per hour, which is large for quiet hours and small for peak hours.
 
