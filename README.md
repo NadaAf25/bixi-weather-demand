@@ -41,6 +41,29 @@ alternative to the simulator.
 
 ![Rolling validation](figures/9_rolling_validation.png)
 
+### How uncertain is a prediction?
+
+A single number hides the uncertainty, so the model also gives 90% prediction intervals,
+built with conformal prediction (conformalised quantile regression). The model is trained
+on April to June, the intervals are sized on July, and their real coverage is checked on
+August, a month neither step has seen.
+
+| Hours in August | Actual values inside the interval (target: 90%) | Average width (trips/hour) |
+|---|---|---|
+| All hours | 90.7% | 2,015 |
+| Weekday rush hours | 90.5% | 3,114 |
+| Dry daytime hours | 86.8% | 2,346 |
+| Rainy hours | **83.3%** | 2,096 |
+| Night (0-5 am) | 99.5% | 1,157 |
+
+Overall the intervals deliver what they promise, and their width adapts: narrow at night,
+wide at rush hour. During rain they are too optimistic (83% instead of 90%): rain is rare
+(8% of hours), so the model has less to learn from. A simpler constant-width interval
+reaches 91.9% overall but is just as wide at night (1,599 trips/hour) as it is by day. The
+intervals are not shown in the Power BI simulator yet.
+
+![Prediction intervals](figures/10_prediction_intervals.png)
+
 ### The simulator
 
 The dashboard answers what-if questions from a table of 16,632 pre-computed model
@@ -92,6 +115,7 @@ The build steps and every DAX measure are in [`powerbi/BUILD_GUIDE.md`](powerbi/
 | 7 | `07_build_scenarios.py` | Scores the model on the what-if grid and flags scenarios with little supporting data. |
 | 8 | `08_load_postgres.py` | Applies `sql/schema.sql`, bulk-loads every table with `COPY` in a single transaction, then runs quality checks. |
 | 9 | `09_validate_models.py` | Rolling-origin validation on three test months (June, July, August) against two naive baselines. Does not feed the database. |
+| 10 | `10_prediction_intervals.py` | 90% prediction intervals (conformalised quantile regression) and a check of their real coverage on August. Does not feed the database. |
 
 ### Database
 
@@ -119,6 +143,7 @@ python src/05_train_model.py
 python src/06_weather_ablation.py
 python src/07_build_scenarios.py
 python src/09_validate_models.py                       # optional: rolling validation
+python src/10_prediction_intervals.py                  # optional: prediction intervals
 
 docker compose up -d                                   # local PostgreSQL 16
 python src/08_load_postgres.py                         # or --dsn / DATABASE_URL for another server
@@ -137,7 +162,7 @@ Then open Power BI Desktop and follow [`powerbi/BUILD_GUIDE.md`](powerbi/BUILD_G
 ## Repository layout
 
 ```
-src/        pipeline scripts 01 to 09
+src/        pipeline scripts 01 to 10
 sql/        schema.sql (tables, constraints, views)
 powerbi/    build guide, DAX measures, theme, bixi_weather.pbix
 data/
@@ -172,10 +197,12 @@ docker-compose.yml
   test of what each variable adds.
 - **Rain is rare** (8% of hours), so rain estimates are noisier than temperature estimates,
   and a tree model cannot extrapolate outside the conditions it has seen.
+- **Intervals are too optimistic in the rain** (83% coverage instead of 90%), and they are
+  checked on a single month (August). They are not in the dashboard yet.
 - **Short validation history.** Only three successive test months exist (June to August),
   and June is scored with just two months of training data. More years of data would allow
   a longer rolling validation.
-- **No hyperparameter tuning and no prediction intervals.** The typical error is about 358
+- **No hyperparameter tuning.** The typical error is about 358
   trips per hour, which is large for quiet hours and small for peak hours.
 
 ## Data sources

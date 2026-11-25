@@ -1,0 +1,11 @@
+method,group,n_hours,coverage_pct,mean_width
+Constant width,All hours,743,91.9,1983
+Constant width,Rainy hours,42,81.0,1903
+Constant width,Dry daytime hours,438,89.3,2123
+Constant width,Weekday rush hours,126,90.5,2131
+Constant width,Night (0-5 am),186,100.0,1599
+CQR (adaptive width),All hours,743,90.7,2015
+CQR (adaptive width),Rainy hours,42,83.3,2096
+CQR (adaptive width),Dry daytime hours,438,86.8,2346
+CQR (adaptive width),Weekday rush hours,126,90.5,3114
+CQR (adaptive width),Night (0-5 am),186,99.5,1157
