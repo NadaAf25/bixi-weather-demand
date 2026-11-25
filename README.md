@@ -104,6 +104,35 @@ trips per hour, bias = prediction minus actual).
   average, with a bias of +111) and smallest above 25 C (9%). The two coldest bands have
   too few hours (5 and 66) to conclude anything.
 
+### Do lagged demand features help?
+
+I tested whether knowing past demand improves the forecast (`src/14_lag_experiment.py`).
+Same model, same rolling-origin folds; only the features change. Every lag is computed from
+earlier hours only (tested in `tests/test_lags.py`), and the first week of April has no
+`lag_168`. Hours without a complete history (263 of 3,669) are dropped for **all** models, so
+the numbers below are not comparable with the other tables of this page, only with each other.
+
+| Features (MAE, trips/hour) | June | July | August | Mean | vs simulator model |
+|---|---:|---:|---:|---:|---:|
+| One hour ahead: + lag_1, lag_24, lag_168, 3 h and 24 h means | 395.2 | 325.3 | 251.6 | 324.0 | -29.8% |
+| Simulator model (calendar + temperature + rain) | 598.1 | 408.5 | 378.5 | 461.7 | - |
+| Day ahead: + lag_24, lag_168, 24 h mean | 620.6 | 490.1 | 419.9 | 510.2 | +10.5% |
+| Day ahead, calendar + lags, **no weather** | 706.8 | 857.8 | 584.7 | 716.4 | +55.2% |
+
+- **One hour ahead, lags help a lot (-30%).** The last hour of demand already contains the
+  current weather, so it is a strong predictor. This is a short-term forecasting tool: it
+  needs real trips, which do not exist for a future hour.
+- **A day ahead, lags do not help.** Adding `lag_24`, `lag_168` and a 24 h mean makes the
+  mean error 10% worse. A plausible reason is that yesterday's and last week's demand
+  reflect their own weather, not the weather being asked about, and that three months of
+  training data are too few to sort this out. I did not test this explanation.
+- **Past demand cannot replace the weather.** Without the weather variables, the day-ahead
+  model is 55% worse than the simulator model. Over a 24 h horizon, the weather says more
+  about demand than yesterday's demand does.
+- **The simulator keeps no lag.** It answers "what if it rained?" for hours that have not
+  happened, so `lag_1` and the recent means do not exist for it, and a lag would hide the
+  very effect of the weather it is meant to measure.
+
 ### Does the weather station matter?
 
 The model uses a single station, Montreal-Trudeau airport (about 14 km from downtown).
@@ -211,10 +240,11 @@ The build steps and every DAX measure are in [`powerbi/BUILD_GUIDE.md`](powerbi/
 | 11 | `11_scenario_intervals.py` | Adds a 90% prediction interval (low and high bound) to each of the 16,632 scenarios, with the same method as step 10, and writes `scenario_intervals.csv`, which step 8 loads. |
 | 12 | `12_station_comparison.py` | Compares the airport and McTavish stations (observations, then model error on the same three rolling folds). Needs `weather_mctavish.csv` (see "Run it"). Does not feed the database. |
 | 13 | `13_error_analysis.py` | Pools the out-of-sample errors of the three validation months and summarises MAE, RMSE and bias by time of day, rain and temperature band. Does not feed the database. |
+| 14 | `14_lag_experiment.py` | Tests lagged-demand features (day ahead and one hour ahead) on the same rolling folds as step 9, built by `src/lags.py` from earlier hours only. Does not feed the database. |
 
 All paths, model settings, test months and the what-if grid are defined once in
 `src/config.py`, which every script imports. `src/conformal.py` holds the interval
-margin shared by steps 10 and 11.
+margin shared by steps 10 and 11, and `src/lags.py` the lag features of step 14.
 
 ### Database
 
@@ -229,7 +259,7 @@ hours, and a trip-count reconciliation: 236,330 trips fall before the weather pe
 
 ### Tests
 
-`tests/` holds 30 automatic checks that run in a few seconds, without internet, the large
+`tests/` holds 33 automatic checks that run in a few seconds, without internet, the large
 BIXI file or a database. The 25 checks of `tests/test_pipeline.py` verify, for example, that
 `features_hourly.csv` has no missing values and unique hours, that the simulator grid has
 exactly 16,632 rows (33 x 3 x 24 x 7), that at 22 °C dry weather beats light rain, which
@@ -237,8 +267,10 @@ beats heavy rain, that the columns of every CSV match the tables of `schema.sql`
 model beats the naive baselines in all three validation months, and that every scenario
 interval contains its point forecast. The 5 checks of `tests/test_config.py` verify that
 every setting lives in `src/config.py` (no script copies it) and that every dependency is
-pinned to an exact version. A GitHub Actions workflow (`.github/workflows/tests.yml`) runs
-them on every push, which is what the badge at the top of this page shows.
+pinned to an exact version. The 3 checks of `tests/test_lags.py` verify that lag features
+only use earlier hours and that a missing hour gives a missing value instead of a shifted
+one. A GitHub Actions workflow (`.github/workflows/tests.yml`) runs them on every push,
+which is what the badge at the top of this page shows.
 
 ```bash
 pip install -r requirements-dev.txt
@@ -267,6 +299,7 @@ python src/09_validate_models.py                       # optional: rolling valid
 python src/10_prediction_intervals.py                  # optional: prediction intervals
 python src/11_scenario_intervals.py                    # intervals for the simulator (needed by step 8)
 python src/13_error_analysis.py                        # optional: errors by hour, rain, temperature
+python src/14_lag_experiment.py                        # optional: lagged-demand features
 
 # optional: weather station comparison (downloads the McTavish station first)
 python src/01_extract_weather.py --station 7024745 --out data/processed/weather_mctavish.csv
@@ -294,8 +327,8 @@ Then open Power BI Desktop and follow [`powerbi/BUILD_GUIDE.md`](powerbi/BUILD_G
 ## Repository layout
 
 ```
-src/                pipeline scripts 01 to 13, config.py (shared settings), conformal.py
-tests/              test_pipeline.py, test_config.py, conftest.py (30 automatic checks)
+src/                pipeline scripts 01 to 14, config.py (shared settings), conformal.py, lags.py
+tests/              test_pipeline.py, test_config.py, test_lags.py, conftest.py (33 automatic checks)
 .github/workflows/  tests.yml (runs the tests on every push)
 sql/                schema.sql (tables, constraints, views)
 powerbi/            build guide, DAX measures, theme, bixi_weather.pbix
@@ -316,6 +349,8 @@ requirements-dev.txt
 - **Why the simulator uses temperature and rain only.** In the ablation study, calendar +
   temperature + rain (MAE 401) is almost as good as all weather variables (388), and, unlike
   humidity or pressure, a person can set both in a what-if question.
+- **No lagged demand in the simulator.** Lags need real past trips, which a what-if question
+  about future hours cannot provide. They are tested separately as a forecasting experiment.
 - **Model scored in Python, served in SQL.** Power BI cannot run scikit-learn, so predictions
   are pre-computed and stored. Re-run steps 7, 11 and 8 whenever the model changes.
 - **Intervals always contain the forecast.** The interval models are trained on April to June,
@@ -350,6 +385,9 @@ requirements-dev.txt
   hours. The simulator's rain scenarios probably understate the real drop in demand, and the
   intervals are too narrow in the rain (83% coverage instead of 90%). Only 161 rainy hours
   are available for the three validation months.
+- **The lag experiment is small.** Three feature sets, no tuning, training windows of 1,295
+  to 2,710 hours, and 263 hours dropped for lack of history. The result "lags do not help a
+  day ahead" may change with more data; it is not proven for other seasons.
 - **Short validation history.** Only three successive test months exist (June to August),
   and June is scored with just two months of training data. More years of data would allow
   a longer rolling validation.

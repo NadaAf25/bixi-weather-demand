@@ -1,0 +1,13 @@
+test_month,model,n_hours,train_hours,MAE,RMSE,bias
+June,Simulator model (calendar + temp + rain),671,1295,598.1,842.7,-43.2
+June,"Day ahead: + lag_24, lag_168, 24 h mean",671,1295,620.6,926.3,181.2
+June,"One hour ahead: + lag_1, lag_24, lag_168, 3 h/24 h means",671,1295,395.2,588.6,71.7
+June,"Day ahead, calendar + lags, no weather",671,1295,706.8,1008.4,-236.1
+July,Simulator model (calendar + temp + rain),744,1966,408.5,638.1,17.7
+July,"Day ahead: + lag_24, lag_168, 24 h mean",744,1966,490.1,717.8,24.8
+July,"One hour ahead: + lag_1, lag_24, lag_168, 3 h/24 h means",744,1966,325.3,536.8,71.5
+July,"Day ahead, calendar + lags, no weather",744,1966,857.8,1252.8,-430.5
+August,Simulator model (calendar + temp + rain),696,2710,378.5,571.6,-45.0
+August,"Day ahead: + lag_24, lag_168, 24 h mean",696,2710,419.9,625.4,-76.6
+August,"One hour ahead: + lag_1, lag_24, lag_168, 3 h/24 h means",696,2710,251.6,420.0,0.9
+August,"Day ahead, calendar + lags, no weather",696,2710,584.7,863.6,-128.6

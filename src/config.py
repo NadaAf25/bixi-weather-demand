@@ -30,6 +30,7 @@ VALIDATION_CSV = PROCESSED / "validation_results.csv"
 INTERVAL_RESULTS_CSV = PROCESSED / "interval_results.csv"
 STATION_COMPARISON_CSV = PROCESSED / "station_comparison.csv"
 ERROR_ANALYSIS_CSV = PROCESSED / "error_analysis.csv"
+LAG_RESULTS_CSV = PROCESSED / "lag_results.csv"
 
 # ---------------------------------------------------------------------------
 # Weather source (ECCC GeoMet-OGC API)
