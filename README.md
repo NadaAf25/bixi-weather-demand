@@ -20,6 +20,27 @@ weather from Montreal-Trudeau airport (3,669 hours).
 
 ![Weather ablation](figures/7_weather_ablation.png)
 
+### Is the model good only in August?
+
+To check that August was not a lucky month, the model is validated on three successive
+test months, each time trained only on the months before (April-May to June, April-June
+to July, April-July to August), and compared with two naive baselines.
+
+| Mean error (trips/hour), lower is better | June | July | August |
+|---|---|---|---|
+| Gradient Boosting, calendar + temperature + rain (the simulator model) | **638** | **405** | **396** |
+| Naive: same hour last week | 815 | 521 | 492 |
+| Naive: average hour x weekday | 1,223 | 1,076 | 796 |
+
+The model beats both baselines in all three months. June is the weakest month because the
+model has seen only two months of training data, including April, when the network was
+still ramping up. The average bias of the simulator model is small compared with its error
+(-41, +17 and -47 trips/hour). The "same hour last week" baseline uses real past trips,
+which a what-if simulator cannot know: it is a yardstick for forecasting, not an
+alternative to the simulator.
+
+![Rolling validation](figures/9_rolling_validation.png)
+
 ### The simulator
 
 The dashboard answers what-if questions from a table of 16,632 pre-computed model
@@ -70,6 +91,7 @@ The build steps and every DAX measure are in [`powerbi/BUILD_GUIDE.md`](powerbi/
 | 6 | `06_weather_ablation.py` | Same model, different feature sets, two test months (July and August). |
 | 7 | `07_build_scenarios.py` | Scores the model on the what-if grid and flags scenarios with little supporting data. |
 | 8 | `08_load_postgres.py` | Applies `sql/schema.sql`, bulk-loads every table with `COPY` in a single transaction, then runs quality checks. |
+| 9 | `09_validate_models.py` | Rolling-origin validation on three test months (June, July, August) against two naive baselines. Does not feed the database. |
 
 ### Database
 
@@ -96,6 +118,7 @@ python src/04_explore.py
 python src/05_train_model.py
 python src/06_weather_ablation.py
 python src/07_build_scenarios.py
+python src/09_validate_models.py                       # optional: rolling validation
 
 docker compose up -d                                   # local PostgreSQL 16
 python src/08_load_postgres.py                         # or --dsn / DATABASE_URL for another server
@@ -114,7 +137,7 @@ Then open Power BI Desktop and follow [`powerbi/BUILD_GUIDE.md`](powerbi/BUILD_G
 ## Repository layout
 
 ```
-src/        pipeline scripts 01 to 08
+src/        pipeline scripts 01 to 09
 sql/        schema.sql (tables, constraints, views)
 powerbi/    build guide, DAX measures, theme, bixi_weather.pbix
 data/
@@ -149,6 +172,9 @@ docker-compose.yml
   test of what each variable adds.
 - **Rain is rare** (8% of hours), so rain estimates are noisier than temperature estimates,
   and a tree model cannot extrapolate outside the conditions it has seen.
+- **Short validation history.** Only three successive test months exist (June to August),
+  and June is scored with just two months of training data. More years of data would allow
+  a longer rolling validation.
 - **No hyperparameter tuning and no prediction intervals.** The typical error is about 358
   trips per hour, which is large for quiet hours and small for peak hours.
 
