@@ -144,6 +144,10 @@ The build steps and every DAX measure are in [`powerbi/BUILD_GUIDE.md`](powerbi/
 | 10 | `10_prediction_intervals.py` | 90% prediction intervals (conformalised quantile regression) and a check of their real coverage on August. Does not feed the database. |
 | 11 | `11_scenario_intervals.py` | Adds a 90% prediction interval (low and high bound) to each of the 16,632 scenarios, with the same method as step 10, and writes `scenario_intervals.csv`, which step 8 loads. |
 
+All paths, model settings, test months and the what-if grid are defined once in
+`src/config.py`, which every script imports. `src/conformal.py` holds the interval
+margin shared by steps 10 and 11.
+
 ### Database
 
 `sql/schema.sql` creates the `bixi` schema: staging tables (`weather_hourly`, `bixi_hourly`),
@@ -157,21 +161,26 @@ hours, and a trip-count reconciliation: 236,330 trips fall before the weather pe
 
 ### Tests
 
-`tests/test_pipeline.py` holds 25 automatic checks that run in a few seconds, without internet,
-the large BIXI file or a database. They verify, for example, that `features_hourly.csv` has no
-missing values and unique hours, that the simulator grid has exactly 16,632 rows (33 x 3 x 24 x 7),
-that at 22 °C dry weather beats light rain, which beats heavy rain, that the columns of every CSV
-match the tables of `schema.sql`, that the model beats the naive baselines in all three
-validation months, and that every scenario interval contains its point forecast. A GitHub
-Actions workflow (`.github/workflows/tests.yml`) runs them on every push, which is what the
-badge at the top of this page shows.
+`tests/` holds 30 automatic checks that run in a few seconds, without internet, the large
+BIXI file or a database. The 25 checks of `tests/test_pipeline.py` verify, for example, that
+`features_hourly.csv` has no missing values and unique hours, that the simulator grid has
+exactly 16,632 rows (33 x 3 x 24 x 7), that at 22 °C dry weather beats light rain, which
+beats heavy rain, that the columns of every CSV match the tables of `schema.sql`, that the
+model beats the naive baselines in all three validation months, and that every scenario
+interval contains its point forecast. The 5 checks of `tests/test_config.py` verify that
+every setting lives in `src/config.py` (no script copies it) and that every dependency is
+pinned to an exact version. A GitHub Actions workflow (`.github/workflows/tests.yml`) runs
+them on every push, which is what the badge at the top of this page shows.
 
 ```bash
-pip install pytest
+pip install -r requirements-dev.txt
 python -m pytest
 ```
 
 ## Run it
+
+Dependency versions are pinned in `requirements.txt` (tested with Python 3.14, the version
+the CI uses).
 
 ```bash
 python -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\activate
@@ -193,7 +202,7 @@ python src/11_scenario_intervals.py                    # intervals for the simul
 docker compose up -d                                   # local PostgreSQL 16
 python src/08_load_postgres.py                         # or --dsn / DATABASE_URL for another server
 
-pip install pytest && python -m pytest                 # optional: run the automatic tests
+pip install -r requirements-dev.txt && python -m pytest   # optional: run the automatic tests
 ```
 
 Already have PostgreSQL installed? Create a `bixi` user and database, then pass the
@@ -209,8 +218,8 @@ Then open Power BI Desktop and follow [`powerbi/BUILD_GUIDE.md`](powerbi/BUILD_G
 ## Repository layout
 
 ```
-src/                pipeline scripts 01 to 11
-tests/              test_pipeline.py (25 automatic checks)
+src/                pipeline scripts 01 to 11, config.py (shared settings), conformal.py
+tests/              test_pipeline.py, test_config.py, conftest.py (30 automatic checks)
 .github/workflows/  tests.yml (runs the tests on every push)
 sql/                schema.sql (tables, constraints, views)
 powerbi/            build guide, DAX measures, theme, bixi_weather.pbix
@@ -221,6 +230,7 @@ figures/            charts 1 to 10
 docs/               architecture diagram and Power BI screenshots
 docker-compose.yml
 requirements.txt
+requirements-dev.txt
 ```
 
 ## Design choices worth knowing
@@ -237,6 +247,9 @@ requirements.txt
   the interval is stretched so that the forecast never falls outside its own band.
 - **Sort orders come from the database.** The `vw_scenarios` view exposes a `rain_order`
   column, so Power BI sorts the rain levels (no rain, light, heavy) without a calculated column.
+- **One place for every setting, exact versions.** Changing a path, the random seed or a
+  model setting means editing `src/config.py` only, and the pinned versions give the same
+  results on another machine. A test fails if a script copies a setting.
 
 ## Limitations
 

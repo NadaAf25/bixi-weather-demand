@@ -8,8 +8,6 @@ different sets of features and compare the errors on two test months.
 
 Outputs: data/processed/ablation_results.csv and figures/7_weather_ablation.png
 """
-from pathlib import Path
-
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -18,15 +16,10 @@ import pandas as pd
 from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.metrics import mean_absolute_error
 
-ROOT = Path(__file__).resolve().parents[1]
-DATA = ROOT / "data" / "processed" / "features_hourly.csv"
-FIG = ROOT / "figures"
-FIG.mkdir(exist_ok=True)
+from config import (ABLATION_CSV, CALENDAR, DAYTIME_FIRST_HOUR, DAYTIME_LAST_HOUR,
+                    FEATURES_CSV, FIGURES, GB_PARAMS, TARGET, WEATHER)
 
-TARGET = "trips"
-CALENDAR = ["hour", "day_of_week", "is_weekend", "is_holiday"]
-WEATHER = ["TEMP", "DEW_POINT_TEMP", "PRECIP_AMOUNT", "RELATIVE_HUMIDITY",
-           "STATION_PRESSURE", "WIND_SPEED", "WIND_DIRECTION"]
+FIGURES.mkdir(parents=True, exist_ok=True)
 
 FEATURE_SETS = {
     "Calendar only": CALENDAR,
@@ -36,21 +29,19 @@ FEATURE_SETS = {
     "All weather only (no calendar)": WEATHER,
 }
 TEST_MONTHS = {7: "MAE_July", 8: "MAE_August"}
-SEED = 42
 
 
 def fit_predict(df: pd.DataFrame, features: list[str], test_month: int):
     train = df[df["month"] < test_month]
     test = df[df["month"] == test_month]
-    model = HistGradientBoostingRegressor(max_iter=300, learning_rate=0.05,
-                                          random_state=SEED)
+    model = HistGradientBoostingRegressor(**GB_PARAMS)
     model.fit(train[features], train[TARGET])
     pred = np.clip(model.predict(test[features]), 0, None)
     return test, pred
 
 
 def main() -> None:
-    df = pd.read_csv(DATA, parse_dates=["hour_local"])
+    df = pd.read_csv(FEATURES_CSV, parse_dates=["hour_local"])
 
     rows, aug_predictions = [], {}
     for name, features in FEATURE_SETS.items():
@@ -67,14 +58,14 @@ def main() -> None:
     reference = results.loc["Calendar only", "MAE_mean"]
     results["error_reduction_vs_calendar_%"] = (
         100 * (1 - results["MAE_mean"] / reference)).round(1)
-    results.to_csv(ROOT / "data" / "processed" / "ablation_results.csv")
+    results.to_csv(ABLATION_CSV)
     print("Mean absolute error (trips per hour), lower is better:\n")
     print(results.to_string(), "\n")
 
     # Where does weather help? Compare rainy vs dry daytime hours in August
     test_cal, pred_cal = aug_predictions["Calendar only"]
     _, pred_all = aug_predictions["Calendar + all weather"]
-    day = test_cal["hour"].between(7, 21).values
+    day = test_cal["hour"].between(DAYTIME_FIRST_HOUR, DAYTIME_LAST_HOUR).values
     rain = (test_cal["PRECIP_AMOUNT"] > 0).values
     print("August, daytime hours (7 am - 9 pm): MAE by weather condition")
     for label, mask in [("Rainy hours", day & rain), ("Dry hours", day & ~rain)]:
@@ -91,9 +82,9 @@ def main() -> None:
     ax.set_xlabel("Mean absolute error (trips per hour) - lower is better")
     ax.set_ylabel("")
     plt.tight_layout()
-    plt.savefig(FIG / "7_weather_ablation.png", dpi=150)
+    plt.savefig(FIGURES / "7_weather_ablation.png", dpi=150)
     plt.close()
-    print(f"\nChart saved in: {FIG}")
+    print(f"\nChart saved in: {FIGURES}")
 
 
 if __name__ == "__main__":

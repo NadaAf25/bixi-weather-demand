@@ -22,10 +22,8 @@ from pathlib import Path
 import pandas as pd
 import psycopg2
 
-ROOT = Path(__file__).resolve().parents[1]
-PROCESSED = ROOT / "data" / "processed"
-SCHEMA_SQL = ROOT / "sql" / "schema.sql"
-DEFAULT_DSN = "postgresql://bixi:bixi@localhost:5432/bixi"
+from config import (ABLATION_CSV, BIXI_CSV, DEFAULT_DSN, FEATURES_CSV, MODEL_RESULTS_CSV,
+                    SCENARIO_INTERVALS_CSV, SCHEMA_SQL, WEATHER_CSV)
 
 
 def load_weather(path: Path) -> pd.DataFrame:
@@ -44,20 +42,20 @@ def load_plain(path: Path, rename: dict | None = None) -> pd.DataFrame:
     return df.rename(columns=rename or {})
 
 
-# table name -> (loader, columns in the order they appear in the table)
+# table name -> DataFrame, columns in the order they appear in the table
 def build_jobs() -> dict[str, pd.DataFrame]:
     return {
-        "weather_hourly": load_weather(PROCESSED / "weather_hourly.csv"),
-        "bixi_hourly": load_plain(PROCESSED / "bixi_hourly.csv"),
-        "features_hourly": load_plain(PROCESSED / "features_hourly.csv"),
+        "weather_hourly": load_weather(WEATHER_CSV),
+        "bixi_hourly": load_plain(BIXI_CSV),
+        "features_hourly": load_plain(FEATURES_CSV),
         "model_results": load_plain(
-            PROCESSED / "model_results.csv", {"mae_%_of_mean": "mae_pct_of_mean"}),
+            MODEL_RESULTS_CSV, {"mae_%_of_mean": "mae_pct_of_mean"}),
         "ablation_results": load_plain(
-            PROCESSED / "ablation_results.csv",
+            ABLATION_CSV,
             {"error_reduction_vs_calendar_%": "error_reduction_vs_calendar_pct",
              "mae_july": "mae_july", "mae_august": "mae_august"}),
         # scenarios + 90% prediction interval (11_scenario_intervals.py)
-        "scenario_predictions": load_plain(PROCESSED / "scenario_intervals.csv"),
+        "scenario_predictions": load_plain(SCENARIO_INTERVALS_CSV),
     }
 
 

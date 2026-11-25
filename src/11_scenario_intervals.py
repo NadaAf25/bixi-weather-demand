@@ -14,45 +14,31 @@ contain that forecast. The script reports how many scenarios were adjusted.
 Input : data/processed/features_hourly.csv, scenario_predictions.csv
 Output: data/processed/scenario_intervals.csv
 """
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import HistGradientBoostingRegressor
 
-ROOT = Path(__file__).resolve().parents[1]
-PROCESSED = ROOT / "data" / "processed"
-DATA = PROCESSED / "features_hourly.csv"
-SCENARIOS = PROCESSED / "scenario_predictions.csv"
-OUT = PROCESSED / "scenario_intervals.csv"
+from conformal import conformal_margin
+from config import (ALPHA, CALIBRATION_MONTH, FEATURES_CSV, GB_PARAMS,
+                    INTERVAL_TRAIN_LAST_MONTH, NIGHT_HOURS, RUSH_HOURS,
+                    SCENARIO_INTERVALS_CSV, SCENARIOS_CSV, SIMULATOR_FEATURES, TARGET)
 
-TARGET = "trips"
-FEATURES = ["hour", "day_of_week", "is_weekend", "is_holiday", "TEMP", "PRECIP_AMOUNT"]
-ALPHA = 0.10            # 90% intervals
-SEED = 42
-PARAMS = dict(max_iter=300, learning_rate=0.05, random_state=SEED)
-
-
-def conformal_margin(scores: np.ndarray, alpha: float) -> float:
-    """Finite-sample corrected quantile of the calibration scores."""
-    n = len(scores)
-    level = min(1.0, np.ceil((n + 1) * (1 - alpha)) / n)
-    return float(np.quantile(scores, level))
+FEATURES = SIMULATOR_FEATURES
 
 
 def main() -> None:
-    df = pd.read_csv(DATA, parse_dates=["hour_local"])
-    train, cal = df[df["month"] <= 6], df[df["month"] == 7]
+    df = pd.read_csv(FEATURES_CSV, parse_dates=["hour_local"])
+    train, cal = df[df["month"] <= INTERVAL_TRAIN_LAST_MONTH], df[df["month"] == CALIBRATION_MONTH]
 
-    lo_m = HistGradientBoostingRegressor(loss="quantile", quantile=ALPHA / 2, **PARAMS)
-    hi_m = HistGradientBoostingRegressor(loss="quantile", quantile=1 - ALPHA / 2, **PARAMS)
+    lo_m = HistGradientBoostingRegressor(loss="quantile", quantile=ALPHA / 2, **GB_PARAMS)
+    hi_m = HistGradientBoostingRegressor(loss="quantile", quantile=1 - ALPHA / 2, **GB_PARAMS)
     lo_m.fit(train[FEATURES], train[TARGET])
     hi_m.fit(train[FEATURES], train[TARGET])
     cal_lo, cal_hi = lo_m.predict(cal[FEATURES]), hi_m.predict(cal[FEATURES])
     q = conformal_margin(np.maximum(cal_lo - cal[TARGET], cal[TARGET] - cal_hi), ALPHA)
     print(f"Calibration margin (July): {q:.0f} trips/hour")
 
-    grid = pd.read_csv(SCENARIOS)
+    grid = pd.read_csv(SCENARIOS_CSV)
     X = (grid.rename(columns={"temp_c": "TEMP", "precip_mm": "PRECIP_AMOUNT"})
              .assign(is_holiday=0)[FEATURES])
     raw_lo, raw_hi = lo_m.predict(X), hi_m.predict(X)
@@ -68,14 +54,14 @@ def main() -> None:
     assert (grid["lower_trips"] <= grid["predicted_trips"]).all()
     assert (grid["predicted_trips"] <= grid["upper_trips"]).all()
 
-    grid.to_csv(OUT, index=False)
+    grid.to_csv(SCENARIO_INTERVALS_CSV, index=False)
     width = grid["upper_trips"] - grid["lower_trips"]
-    print(f"{len(grid):,} scenarios written: {OUT}")
+    print(f"{len(grid):,} scenarios written: {SCENARIO_INTERVALS_CSV}")
     print(f"Scenarios stretched to contain the point forecast: {adjusted:,} "
           f"({adjusted / len(grid):.1%})")
     print(f"Average interval width: {width.mean():.0f} trips/hour")
-    for label, hours in [("Night (0-5 am)", [0, 1, 2, 3, 4, 5]),
-                         ("Rush hours (7-9, 16-18)", [7, 8, 9, 16, 17, 18])]:
+    for label, hours in [("Night (0-5 am)", NIGHT_HOURS),
+                         ("Rush hours (7-9, 16-18)", RUSH_HOURS)]:
         print(f"  {label:<24} {width[grid['hour'].isin(hours)].mean():.0f}")
     wed = grid[(grid.temp_c == 22) & (grid.day_of_week == 2) & (grid.hour == 8)]
     print("\nWednesday 8 am, 22 C:")

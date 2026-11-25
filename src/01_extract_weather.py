@@ -17,19 +17,8 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-ROOT = Path(__file__).resolve().parents[1]
-BASE_URL = "https://api.weather.gc.ca/collections/climate-hourly/items"
-STATION_ID = "702S006"   # Montreal/Pierre Elliott Trudeau INTL (automatic station)
-PAGE_SIZE = 1000
-DEFAULT_YEARS = [2026]
-DEFAULT_MONTHS = [4, 5, 6, 7, 8]
-OUT_PATH = ROOT / "data" / "processed" / "weather_hourly.csv"
-
-KEEP_COLUMNS = [
-    "ID", "UTC_DATE", "TEMP", "DEW_POINT_TEMP", "HUMIDEX", "WINDCHILL",
-    "PRECIP_AMOUNT", "RELATIVE_HUMIDITY", "STATION_PRESSURE", "VISIBILITY",
-    "WIND_SPEED", "WIND_DIRECTION", "WEATHER_ENG_DESC",
-]
+from config import (API_PAGE_SIZE, API_URL, DEFAULT_MONTHS, DEFAULT_YEARS, STATION_ID,
+                    WEATHER_API_COLUMNS, WEATHER_CSV)
 
 
 def make_session() -> requests.Session:
@@ -48,20 +37,20 @@ def fetch_month(session: requests.Session, year: int, month: int) -> list[dict]:
     params = {
         "CLIMATE_IDENTIFIER": STATION_ID,
         "datetime": f"{year}-{month:02d}-01/{year}-{month:02d}-{last_day:02d}",
-        "limit": PAGE_SIZE,
+        "limit": API_PAGE_SIZE,
         "offset": 0,
         "f": "json",
     }
     rows, total = [], None
     while total is None or params["offset"] < total:
-        resp = session.get(BASE_URL, params=params, timeout=60)
+        resp = session.get(API_URL, params=params, timeout=60)
         resp.raise_for_status()
         payload = resp.json()
         total = payload["numberMatched"]
         if not payload["features"]:
             break
         rows.extend(f["properties"] for f in payload["features"])
-        params["offset"] += PAGE_SIZE
+        params["offset"] += API_PAGE_SIZE
         time.sleep(0.3)  # be polite with the API
     return rows
 
@@ -72,7 +61,7 @@ def clean(df: pd.DataFrame) -> pd.DataFrame:
     The API's LOCAL_DATE is in fixed standard time (EST) all year, so it is
     off by one hour during daylight saving time. We start from UTC instead.
     """
-    df = df[[c for c in KEEP_COLUMNS if c in df.columns]].drop_duplicates("ID")
+    df = df[[c for c in WEATHER_API_COLUMNS if c in df.columns]].drop_duplicates("ID")
     ts_utc = pd.to_datetime(df["UTC_DATE"], utc=True)
     hour_local = (ts_utc.dt.tz_convert("America/Montreal")
                         .dt.tz_localize(None))       # wall-clock time, no timezone
@@ -93,7 +82,7 @@ def main() -> None:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--years", type=int, nargs="+", default=DEFAULT_YEARS)
     parser.add_argument("--months", type=int, nargs="+", default=DEFAULT_MONTHS)
-    parser.add_argument("--out", type=Path, default=OUT_PATH)
+    parser.add_argument("--out", type=Path, default=WEATHER_CSV)
     args = parser.parse_args()
 
     session = make_session()

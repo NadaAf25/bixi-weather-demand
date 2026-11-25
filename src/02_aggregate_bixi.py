@@ -13,14 +13,8 @@ from pathlib import Path
 
 import pandas as pd
 
-ROOT = Path(__file__).resolve().parents[1]
-RAW_DIR = ROOT / "data" / "raw"
-OUT_PATH = ROOT / "data" / "processed" / "bixi_hourly.csv"
-
-CHUNK_SIZE = 1_000_000
-MIN_DURATION_S = 60          # trips under 1 minute: false starts / errors
-MAX_DURATION_S = 24 * 3600   # trips over 24 hours: bikes not returned / errors
-COLUMNS = ["STARTTIMEMS", "ENDTIMEMS"]
+from config import (BIXI_COLUMNS, BIXI_CSV, CHUNK_SIZE, MAX_TRIP_SECONDS,
+                    MIN_TRIP_SECONDS, RAW_DIR)
 
 
 def find_source() -> Path:
@@ -44,7 +38,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("source", type=Path, nargs="?", default=None)
-    parser.add_argument("--out", type=Path, default=OUT_PATH)
+    parser.add_argument("--out", type=Path, default=BIXI_CSV)
     args = parser.parse_args()
 
     source = args.source or find_source()
@@ -54,7 +48,7 @@ def main() -> None:
     stats = {"read": 0, "missing_time": 0, "invalid_duration": 0, "kept": 0}
 
     with open_source(source) as f:
-        for chunk in pd.read_csv(f, usecols=COLUMNS, chunksize=CHUNK_SIZE):
+        for chunk in pd.read_csv(f, usecols=BIXI_COLUMNS, chunksize=CHUNK_SIZE):
             stats["read"] += len(chunk)
 
             missing = chunk.isna().any(axis=1)
@@ -62,7 +56,7 @@ def main() -> None:
             chunk = chunk[~missing]
 
             duration = (chunk["ENDTIMEMS"] - chunk["STARTTIMEMS"]) / 1000
-            valid = duration.between(MIN_DURATION_S, MAX_DURATION_S)
+            valid = duration.between(MIN_TRIP_SECONDS, MAX_TRIP_SECONDS)
             stats["invalid_duration"] += int((~valid).sum())
             chunk = chunk[valid]
             stats["kept"] += len(chunk)

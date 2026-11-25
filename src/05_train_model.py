@@ -13,8 +13,6 @@ Models compared:
 
 Outputs: data/processed/model_results.csv and charts 5_*.png / 6_*.png in figures/
 """
-from pathlib import Path
-
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -28,18 +26,13 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
-ROOT = Path(__file__).resolve().parents[1]
-DATA = ROOT / "data" / "processed" / "features_hourly.csv"
-FIG = ROOT / "figures"
-FIG.mkdir(exist_ok=True)
+from config import (CALENDAR, FEATURES_CSV, FIGURES, FINAL_TEST_MONTH, GB_PARAMS,
+                    MODEL_RESULTS_CSV, SEED, TARGET, WEATHER)
 
-TARGET = "trips"
-WEATHER = ["TEMP", "DEW_POINT_TEMP", "PRECIP_AMOUNT", "RELATIVE_HUMIDITY",
-           "STATION_PRESSURE", "WIND_SPEED", "WIND_DIRECTION"]
-CALENDAR = ["hour", "day_of_week", "is_weekend", "is_holiday"]
+FIGURES.mkdir(parents=True, exist_ok=True)
+
+# The 'month' feature is left out on purpose
 FEATURES = WEATHER + CALENDAR
-TEST_MONTH = 8          # August is the test set; the 'month' feature is left out on purpose
-SEED = 42
 
 
 def evaluate(name: str, y_true, y_pred) -> dict:
@@ -54,9 +47,9 @@ def evaluate(name: str, y_true, y_pred) -> dict:
 
 
 def main() -> None:
-    df = pd.read_csv(DATA, parse_dates=["hour_local"])
-    train = df[df["month"] < TEST_MONTH]
-    test = df[df["month"] == TEST_MONTH]
+    df = pd.read_csv(FEATURES_CSV, parse_dates=["hour_local"])
+    train = df[df["month"] < FINAL_TEST_MONTH]
+    test = df[df["month"] == FINAL_TEST_MONTH]
     X_train, y_train = train[FEATURES], train[TARGET]
     X_test, y_test = test[FEATURES], test[TARGET]
     print(f"Train: {len(train):,} hours ({train['hour_local'].min():%Y-%m-%d} to "
@@ -87,8 +80,7 @@ def main() -> None:
     predictions["Random Forest"] = forest.predict(X_test)
 
     # 4. Gradient Boosting
-    boosting = HistGradientBoostingRegressor(max_iter=300, learning_rate=0.05,
-                                             random_state=SEED)
+    boosting = HistGradientBoostingRegressor(**GB_PARAMS)
     boosting.fit(X_train, y_train)
     predictions["Gradient Boosting"] = boosting.predict(X_test)
 
@@ -96,7 +88,7 @@ def main() -> None:
         results.append(evaluate(name, y_test.values, np.clip(pred, 0, None)))
 
     results_df = pd.DataFrame(results).set_index("model")
-    results_df.to_csv(ROOT / "data" / "processed" / "model_results.csv")
+    results_df.to_csv(MODEL_RESULTS_CSV)
     print(results_df.to_string(), "\n")
 
     # Chart 5: actual vs predicted, two weeks of August, best model
@@ -113,7 +105,7 @@ def main() -> None:
     plt.ylabel("Trips per hour")
     plt.legend()
     plt.tight_layout()
-    plt.savefig(FIG / "5_actual_vs_predicted.png", dpi=150)
+    plt.savefig(FIGURES / "5_actual_vs_predicted.png", dpi=150)
     plt.close()
 
     # Chart 6: which features matter? (permutation importance on the test set)
@@ -124,13 +116,13 @@ def main() -> None:
     ax.set_title("Feature importance (Random Forest, permutation on August)")
     ax.set_xlabel("Drop in R2 when the feature is shuffled")
     plt.tight_layout()
-    plt.savefig(FIG / "6_feature_importance.png", dpi=150)
+    plt.savefig(FIGURES / "6_feature_importance.png", dpi=150)
     plt.close()
 
     print("Top features:")
     print(importance.sort_values(ascending=False).head(5).round(3).to_string())
     print(f"\nBest model: {best}")
-    print(f"Charts saved in: {FIG}")
+    print(f"Charts saved in: {FIGURES}")
 
 
 if __name__ == "__main__":

@@ -15,8 +15,6 @@ Outputs:
     data/processed/scenario_predictions.csv
     figures/8_scenario_curves.png
 """
-from pathlib import Path
-
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -24,44 +22,28 @@ import numpy as np
 import pandas as pd
 from sklearn.ensemble import HistGradientBoostingRegressor
 
-ROOT = Path(__file__).resolve().parents[1]
-DATA = ROOT / "data" / "processed" / "features_hourly.csv"
-OUT = ROOT / "data" / "processed" / "scenario_predictions.csv"
-FIG = ROOT / "figures"
-FIG.mkdir(exist_ok=True)
+from config import (DAY_NAMES, FEATURES_CSV, FIGURES, FINAL_TEST_MONTH, GB_PARAMS,
+                    MIN_SIMILAR_HOURS, RAIN_LEVELS, SCENARIOS_CSV, SIMULATOR_FEATURES,
+                    TARGET, TEMPS)
 
-TARGET = "trips"
-FEATURES = ["hour", "day_of_week", "is_weekend", "is_holiday", "TEMP", "PRECIP_AMOUNT"]
-SEED = 42
+FIGURES.mkdir(parents=True, exist_ok=True)
 
-# Scenario grid. Temperatures stay inside the range actually observed
-# (about -5 to 32 C), because tree models cannot extrapolate beyond it.
-TEMPS = range(0, 33)
-RAIN_LEVELS = {                      # hourly precipitation, in mm
-    "No rain": 0.0,
-    "Light rain (1 mm/h)": 1.0,
-    "Heavy rain (3 mm/h)": 3.0,
-}
-MIN_SIMILAR_HOURS = 30   # fewer real look-alike hours than this = flagged unreliable
-DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
-             "Saturday", "Sunday"]
+FEATURES = SIMULATOR_FEATURES
 
 
 def main() -> None:
-    df = pd.read_csv(DATA, parse_dates=["hour_local"])
+    df = pd.read_csv(FEATURES_CSV, parse_dates=["hour_local"])
 
     # Same time-based check as the ablation study: train April-July, test August
-    train, test = df[df["month"] < 8], df[df["month"] == 8]
-    check = HistGradientBoostingRegressor(max_iter=300, learning_rate=0.05,
-                                          random_state=SEED)
+    train, test = df[df["month"] < FINAL_TEST_MONTH], df[df["month"] == FINAL_TEST_MONTH]
+    check = HistGradientBoostingRegressor(**GB_PARAMS)
     check.fit(train[FEATURES], train[TARGET])
     pred = np.clip(check.predict(test[FEATURES]), 0, None)
     mae = np.abs(pred - test[TARGET]).mean()
     print(f"Validation MAE on August: {mae:.0f} trips/hour")
 
     # Final model: all the data
-    model = HistGradientBoostingRegressor(max_iter=300, learning_rate=0.05,
-                                          random_state=SEED)
+    model = HistGradientBoostingRegressor(**GB_PARAMS)
     model.fit(df[FEATURES], df[TARGET])
 
     grid = pd.MultiIndex.from_product(
@@ -93,8 +75,8 @@ def main() -> None:
 
     cols = ["temp_c", "rain_label", "precip_mm", "hour", "day_of_week", "day_name",
             "is_weekend", "predicted_trips", "n_similar_hours", "is_reliable"]
-    grid[cols].to_csv(OUT, index=False)
-    print(f"{len(grid):,} scenarios written: {OUT}")
+    grid[cols].to_csv(SCENARIOS_CSV, index=False)
+    print(f"{len(grid):,} scenarios written: {SCENARIOS_CSV}")
 
     # Headline numbers (also used in the README)
     for temp in (10, 22, 30):
@@ -125,9 +107,9 @@ def main() -> None:
     axes[0].set_ylabel("Predicted trips per day")
     axes[0].legend()
     plt.tight_layout()
-    plt.savefig(FIG / "8_scenario_curves.png", dpi=150)
+    plt.savefig(FIGURES / "8_scenario_curves.png", dpi=150)
     plt.close()
-    print(f"Chart saved in: {FIG}")
+    print(f"Chart saved in: {FIGURES}")
 
 
 if __name__ == "__main__":
