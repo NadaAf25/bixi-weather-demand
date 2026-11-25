@@ -259,17 +259,26 @@ hours, and a trip-count reconciliation: 236,330 trips fall before the weather pe
 
 ### Tests
 
-`tests/` holds 33 automatic checks that run in a few seconds, without internet, the large
-BIXI file or a database. The 25 checks of `tests/test_pipeline.py` verify, for example, that
-`features_hourly.csv` has no missing values and unique hours, that the simulator grid has
-exactly 16,632 rows (33 x 3 x 24 x 7), that at 22 °C dry weather beats light rain, which
+`tests/` holds 36 automatic checks. 33 of them run in a few seconds without internet, the
+large BIXI file or a database. The 25 checks of `tests/test_pipeline.py` verify, for example,
+that `features_hourly.csv` has no missing values and unique hours, that the simulator grid
+has exactly 16,632 rows (33 x 3 x 24 x 7), that at 22 °C dry weather beats light rain, which
 beats heavy rain, that the columns of every CSV match the tables of `schema.sql`, that the
 model beats the naive baselines in all three validation months, and that every scenario
 interval contains its point forecast. The 5 checks of `tests/test_config.py` verify that
 every setting lives in `src/config.py` (no script copies it) and that every dependency is
 pinned to an exact version. The 3 checks of `tests/test_lags.py` verify that lag features
 only use earlier hours and that a missing hour gives a missing value instead of a shifted
-one. A GitHub Actions workflow (`.github/workflows/tests.yml`) runs them on every push,
+one.
+
+The 3 checks of `tests/test_postgres_integration.py` load the real CSVs into a PostgreSQL 16
+service with `08_load_postgres.py` (twice, to prove that it is idempotent), then verify the
+row counts of every table, that the five `vw_*` views return the expected rows, and that the
+database rejects a negative trip count and a duplicate key. They run in GitHub Actions and are
+skipped locally unless `TEST_DATABASE_URL` is set: the loader drops the `bixi` schema, so it
+must never point at a database you care about.
+
+A GitHub Actions workflow (`.github/workflows/tests.yml`) runs everything on every push,
 which is what the badge at the top of this page shows.
 
 ```bash
@@ -328,8 +337,8 @@ Then open Power BI Desktop and follow [`powerbi/BUILD_GUIDE.md`](powerbi/BUILD_G
 
 ```
 src/                pipeline scripts 01 to 14, config.py (shared settings), conformal.py, lags.py
-tests/              test_pipeline.py, test_config.py, test_lags.py, conftest.py (33 automatic checks)
-.github/workflows/  tests.yml (runs the tests on every push)
+tests/              test_pipeline.py, test_config.py, test_lags.py, test_postgres_integration.py, conftest.py (36 checks)
+.github/workflows/  tests.yml (runs the tests on every push, with a PostgreSQL 16 service)
 sql/                schema.sql (tables, constraints, views)
 powerbi/            build guide, DAX measures, theme, bixi_weather.pbix
 data/
@@ -391,8 +400,9 @@ requirements-dev.txt
 - **Short validation history.** Only three successive test months exist (June to August),
   and June is scored with just two months of training data. More years of data would allow
   a longer rolling validation.
-- **Tests cover the data and the schema, not the database load.** The automatic tests do not
-  start PostgreSQL, so `08_load_postgres.py` is checked by its own load-time quality checks.
+- **The database tests use the project's own CSVs.** The integration test loads the real
+  outputs into an empty PostgreSQL, but it does not test a load that fails halfway or a
+  different schema version.
 - **No hyperparameter tuning.** The typical error is about 358
   trips per hour, which is large for quiet hours and small for peak hours.
 
