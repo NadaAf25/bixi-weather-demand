@@ -61,8 +61,9 @@ August, a month neither step has seen.
 Overall the intervals deliver what they promise, and their width adapts: narrow at night,
 wide at rush hour. During rain they are too optimistic (83% instead of 90%): rain is rare
 (8% of hours), so the model has less to learn from. A simpler constant-width interval
-reaches 91.9% overall but is just as wide at night (1,599 trips/hour) as it is by day. The
-intervals are not shown in the Power BI simulator yet.
+reaches 91.9% overall but is just as wide at night (1,599 trips/hour) as it is by day.
+The same method gives the intervals shown in the Power BI simulator, as a lower-bound line
+and an upper-bound line on the hourly curve (see below).
 
 ![Prediction intervals](figures/10_prediction_intervals.png)
 
@@ -82,13 +83,36 @@ extreme scenario, so read these as a sensitivity to rain, not as a weather-forec
 Scenarios with too few comparable real hours (e.g. rain at 30 °C: it almost never rained
 above 25 °C) are flagged as unreliable in the dashboard.
 
+Every scenario also carries a 90% prediction interval (`lower_trips`, `upper_trips`), built
+with the same method (quantile models trained on April to June, margin calibrated on July).
+The simulator's point forecast comes from a model trained on all the data, so
+`11_scenario_intervals.py` stretches an interval when needed so that it always contains that
+forecast: 567 of the 16,632 scenarios (3.4%) were adjusted. The average interval is 1,943
+trips/hour wide: 1,371 at night (0-5 am) and 2,658 at rush hours (7 to 9 and 16 to 18). The
+90.7% coverage above was measured for the April-to-June setup on August; the simulator's own
+intervals, once stretched, were not measured again.
+
+For a Wednesday at 8 am and 22 °C:
+
+| Scenario | Lower bound | Predicted trips | Upper bound |
+|---|---|---|---|
+| Dry | 1,695 | 5,528 | 6,171 |
+| Light rain (1 mm/h) | 858 | 2,479 | 5,186 |
+| Heavy rain (3 mm/h) | 358 | 2,071 | 4,943 |
+
+In the dashboard, the two bound lines follow the selected rain level, while the "dry" line
+always shows the dry scenario. At 8 am the dry forecast (5,528) is therefore above the upper
+bound of the light-rain interval (5,186): the two lines belong to different scenarios, not to
+the same forecast.
+
 ![Scenario curves](figures/8_scenario_curves.png)
 
 ## Dashboard (Power BI)
 
 Three pages: **Overview** (daily trips, a typical day, trips by temperature and rain),
 **Simulator** (pick temperature, rain and day: get a headline number, an hour-by-hour curve
-and a reliability warning) and **Model** (model comparison and ablation study).
+with its 90% prediction interval and a reliability warning) and **Model** (model comparison
+and ablation study).
 The report reads the `vw_*` views of the PostgreSQL schema.
 The build steps and every DAX measure are in [`powerbi/BUILD_GUIDE.md`](powerbi/BUILD_GUIDE.md).
 
@@ -115,15 +139,17 @@ The build steps and every DAX measure are in [`powerbi/BUILD_GUIDE.md`](powerbi/
 | 5 | `05_train_model.py` | Baseline, Ridge, Random Forest, Gradient Boosting. Time-based split (train April to July, test August), no shuffling. |
 | 6 | `06_weather_ablation.py` | Same model, different feature sets, two test months (July and August). |
 | 7 | `07_build_scenarios.py` | Scores the model on the what-if grid and flags scenarios with little supporting data. |
-| 8 | `08_load_postgres.py` | Applies `sql/schema.sql`, bulk-loads every table with `COPY` in a single transaction, then runs quality checks. |
+| 8 | `08_load_postgres.py` | Applies `sql/schema.sql`, bulk-loads every table with `COPY` in a single transaction, then runs quality checks. It loads the scenarios from `scenario_intervals.csv`, so step 11 must have run first. |
 | 9 | `09_validate_models.py` | Rolling-origin validation on three test months (June, July, August) against two naive baselines. Does not feed the database. |
 | 10 | `10_prediction_intervals.py` | 90% prediction intervals (conformalised quantile regression) and a check of their real coverage on August. Does not feed the database. |
+| 11 | `11_scenario_intervals.py` | Adds a 90% prediction interval (low and high bound) to each of the 16,632 scenarios, with the same method as step 10, and writes `scenario_intervals.csv`, which step 8 loads. |
 
 ### Database
 
 `sql/schema.sql` creates the `bixi` schema: staging tables (`weather_hourly`, `bixi_hourly`),
 the modelling table (`features_hourly`), model outputs (`model_results`, `ablation_results`,
-`scenario_predictions`) and five reporting views. Primary keys, `CHECK` constraints and
+`scenario_predictions`, which includes the interval bounds `lower_trips` and `upper_trips`)
+and five reporting views. Primary keys, `CHECK` constraints and
 NOT NULL rules reject bad data at load time. The loader is idempotent (re-run it any time) and
 rolls back everything if a check fails. Checks include row counts against the CSVs, orphan
 hours, and a trip-count reconciliation: 236,330 trips fall before the weather period starts
@@ -131,13 +157,14 @@ hours, and a trip-count reconciliation: 236,330 trips fall before the weather pe
 
 ### Tests
 
-`tests/test_pipeline.py` holds 23 automatic checks that run in a few seconds, without internet,
+`tests/test_pipeline.py` holds 25 automatic checks that run in a few seconds, without internet,
 the large BIXI file or a database. They verify, for example, that `features_hourly.csv` has no
 missing values and unique hours, that the simulator grid has exactly 16,632 rows (33 x 3 x 24 x 7),
 that at 22 °C dry weather beats light rain, which beats heavy rain, that the columns of every CSV
-match the tables of `schema.sql`, and that the model beats the naive baselines in all three
-validation months. A GitHub Actions workflow (`.github/workflows/tests.yml`) runs them on every
-push, which is what the badge at the top of this page shows.
+match the tables of `schema.sql`, that the model beats the naive baselines in all three
+validation months, and that every scenario interval contains its point forecast. A GitHub
+Actions workflow (`.github/workflows/tests.yml`) runs them on every push, which is what the
+badge at the top of this page shows.
 
 ```bash
 pip install pytest
@@ -161,6 +188,7 @@ python src/06_weather_ablation.py
 python src/07_build_scenarios.py
 python src/09_validate_models.py                       # optional: rolling validation
 python src/10_prediction_intervals.py                  # optional: prediction intervals
+python src/11_scenario_intervals.py                    # intervals for the simulator (needed by step 8)
 
 docker compose up -d                                   # local PostgreSQL 16
 python src/08_load_postgres.py                         # or --dsn / DATABASE_URL for another server
@@ -181,8 +209,8 @@ Then open Power BI Desktop and follow [`powerbi/BUILD_GUIDE.md`](powerbi/BUILD_G
 ## Repository layout
 
 ```
-src/                pipeline scripts 01 to 10
-tests/              test_pipeline.py (23 automatic checks)
+src/                pipeline scripts 01 to 11
+tests/              test_pipeline.py (25 automatic checks)
 .github/workflows/  tests.yml (runs the tests on every push)
 sql/                schema.sql (tables, constraints, views)
 powerbi/            build guide, DAX measures, theme, bixi_weather.pbix
@@ -203,7 +231,10 @@ requirements.txt
   temperature + rain (MAE 401) is almost as good as all weather variables (388), and, unlike
   humidity or pressure, a person can set both in a what-if question.
 - **Model scored in Python, served in SQL.** Power BI cannot run scikit-learn, so predictions
-  are pre-computed and stored. Re-run step 7 and step 8 whenever the model changes.
+  are pre-computed and stored. Re-run steps 7, 11 and 8 whenever the model changes.
+- **Intervals always contain the forecast.** The interval models are trained on April to June,
+  while the point forecast uses all the data. Where the two disagree (3.4% of the scenarios),
+  the interval is stretched so that the forecast never falls outside its own band.
 - **Sort orders come from the database.** The `vw_scenarios` view exposes a `rain_order`
   column, so Power BI sorts the rain levels (no rain, light, heavy) without a calculated column.
 
@@ -220,7 +251,8 @@ requirements.txt
 - **Rain is rare** (8% of hours), so rain estimates are noisier than temperature estimates,
   and a tree model cannot extrapolate outside the conditions it has seen.
 - **Intervals are too optimistic in the rain** (83% coverage instead of 90%), and they are
-  checked on a single month (August). They are not in the dashboard yet.
+  checked on a single month (August). The simulator's own intervals, stretched to contain the
+  final model's forecast, were not measured again.
 - **Short validation history.** Only three successive test months exist (June to August),
   and June is scored with just two months of training data. More years of data would allow
   a longer rolling validation.
