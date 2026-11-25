@@ -32,6 +32,10 @@ STATION_COMPARISON_CSV = PROCESSED / "station_comparison.csv"
 ERROR_ANALYSIS_CSV = PROCESSED / "error_analysis.csv"
 LAG_RESULTS_CSV = PROCESSED / "lag_results.csv"
 RAIN_RESULTS_CSV = PROCESSED / "rain_results.csv"
+BIXI_2025_CSV = PROCESSED / "bixi_hourly_2025.csv"
+WEATHER_2025_CSV = PROCESSED / "weather_2025.csv"
+FEATURES_2025_CSV = PROCESSED / "features_hourly_2025.csv"
+YEAR_TRANSFER_CSV = PROCESSED / "year_transfer_results.csv"
 
 # ---------------------------------------------------------------------------
 # Weather source (ECCC GeoMet-OGC API)
@@ -64,6 +68,17 @@ HOLIDAYS_2026 = [
     "2026-07-01",  # Canada Day
 ]
 
+# Quebec public holidays 2025 (external test year). Labour Day and Thanksgiving
+# only matter for the September-October part.
+HOLIDAYS_2025 = [
+    "2025-04-18",  # Good Friday
+    "2025-05-19",  # National Patriots' Day
+    "2025-06-24",  # Fete nationale du Quebec
+    "2025-07-01",  # Canada Day
+    "2025-09-01",  # Labour Day
+    "2025-10-13",  # Thanksgiving
+]
+
 # ---------------------------------------------------------------------------
 # Modelling
 # ---------------------------------------------------------------------------
@@ -89,6 +104,11 @@ INTERVAL_TRAIN_LAST_MONTH = 6    # intervals are trained on April to June
 ROLLING_FOLDS = [(6, "June"), (7, "July"), (8, "August")]   # (test month, name)
 
 ALPHA = 0.10                     # 90% prediction intervals
+
+# External test on another year (16_year_transfer.py): the model is trained on 2026 only
+YEAR_TRANSFER_MONTHS = [4, 5, 6, 7, 8, 9, 10]   # months when BIXI operates
+YEAR_TRANSFER_SAME_SEASON = [5, 6, 7, 8]         # May-August: same months as the training year
+YEAR_TRANSFER_AUTUMN = [9, 10]                   # months the model has never seen
 
 # Hours of the day used in several analyses
 DAYTIME_FIRST_HOUR, DAYTIME_LAST_HOUR = 7, 21     # 7 am to 9 pm

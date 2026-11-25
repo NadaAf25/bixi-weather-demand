@@ -20,6 +20,7 @@ weather from Montreal-Trudeau airport (3,669 hours).
 | Is weather enough on its own? | No. Weather without calendar features is *worse* than calendar alone (1,332 vs 925): the commute rhythm explains the shape of the day, the weather explains how high the peaks are. |
 | Best model? | Gradient Boosting: **MAE 358 trips/hour (11.9% of the average hour), R² 0.94** on August, a month the model never saw. A "typical hour x weekday/weekend" baseline gets 837. |
 | Does the weather station matter? | Not materially. Downtown (McTavish) and the airport give the same mean error over three test months: **480.0 vs 479.7 trips/hour**. |
+| Does it work on another year? | Yes for the same months, no for autumn. Trained on 2026 and scored on May-August 2025, the error is **358 trips/hour (12.7%)** against 697 for the typical hour x weekday. September-October 2025 is underestimated by about 15% (error 542, 20%). |
 
 ![Weather ablation](figures/7_weather_ablation.png)
 
@@ -126,7 +127,45 @@ never increase demand (a monotonic constraint), and adding recent-rain features
   which does not justify regenerating the scenarios, and recent rain cannot be used by a
   what-if simulator, which has no rain history.
 - **The cause is not established.** With 161 rainy hours and no significance test, I cannot
-  tell whether the model lacks data or misses something else, such as rain intensity.
+  tell whether the model lacks data or misses something else, such as rain intensity. The
+  2025 test below suggests that part of the bias comes from the short training windows.
+
+### Does the model work on another year?
+
+Everything above is measured on 2026. To check that the model is not specific to this year,
+I trained it once on all of 2026, froze it and scored it on 2025
+(`src/16_year_transfer.py`). The 2025 data was not used to train, tune or choose anything in
+this project. It goes through the same code (`03_build_features.py --year 2025`), with the
+same weather station.
+
+| 2025 hours | Model | MAE | Bias | MAE as % of average |
+|---|---|---:|---:|---:|
+| May-August (2,945 hours, 2,811 trips/hour on average) | Naive: average hour x weekday | 697 | -334 | 24.8% |
+| | Calendar only | 682 | -322 | 24.2% |
+| | **Simulator model** | **358** | **-47** | **12.7%** |
+| September-October (1,456 hours, 2,683 on average) | Naive: average hour x weekday | 653 | -201 | 24.4% |
+| | Calendar only | 640 | -199 | 23.9% |
+| | **Simulator model** | **542** | **-410** | **20.2%** |
+
+(trips per hour, bias = prediction minus actual. The 358 for May-August 2025 and the 358 of
+August 2026 in the key findings are different hours and a different training set: the
+equality is a coincidence.)
+
+- **The same months transfer well.** From May to August the model makes about half the error
+  of the two naive models, with a small bias. The two years have a similar demand level in
+  these months (the 2026 average is between 93% and 107% of the 2025 one).
+- **April is the weakest month** (MAE 519, 53% of the average, bias +405). April 2025 was
+  much quieter than April 2026 (971 against 1,232 trips/hour on average), which probably
+  explains part of the gap. I did not test it.
+- **Autumn is underestimated by about 15%** (bias -410 in September and October). The
+  autumn temperatures are inside the range of 2026, so this is not extrapolation. A
+  plausible explanation, not tested: in 2026, cool hours exist only in April, when the
+  network was ramping up, so the model learned that cool weather means low demand. This is
+  the temperature-versus-season confusion described in the limitations.
+- **Rain.** On the 201 rainy hours of May-August 2025 the bias is +148 trips/hour (about
+  +10% of the average of 1,538), against +665 in the rolling validation. The hours and
+  training sizes differ, so the two are not strictly comparable, but part of the earlier
+  rain bias may come from the small training windows (April to May, with little rain).
 
 ### Do lagged demand features help?
 
@@ -252,8 +291,8 @@ The build steps and every DAX measure are in [`powerbi/BUILD_GUIDE.md`](powerbi/
 | Step | Script | What it does |
 |---|---|---|
 | 1 | `01_extract_weather.py` | Downloads hourly observations from the ECCC GeoMet API (pagination, automatic retries). Rebuilds Montreal local time from UTC, because the API's local timestamp ignores daylight saving. Takes the airport station by default; `--station` and `--out` fetch another one without touching the pipeline's input. |
-| 2 | `02_aggregate_bixi.py` | Streams the ~2 GB BIXI file in 1M-row chunks, drops trips under 1 minute or over 24 hours, counts trips per hour. Reads straight from the ZIP. |
-| 3 | `03_build_features.py` | Joins trips and weather, adds hour, weekday, weekend and Quebec holiday flags. An hour without any trip becomes 0, not missing. |
+| 2 | `02_aggregate_bixi.py` | Streams the ~2 GB BIXI file in 1M-row chunks, drops trips under 1 minute or over 24 hours, counts trips per hour. Reads straight from the ZIP. `--out` writes the result elsewhere (used for 2025). |
+| 3 | `03_build_features.py` | Joins trips and weather, adds hour, weekday, weekend and Quebec holiday flags. An hour without any trip becomes 0, not missing. `--year 2025` builds the 2025 table used by step 16. |
 | 4 | `04_explore.py` | Exploratory charts 1 to 4. |
 | 5 | `05_train_model.py` | Baseline, Ridge, Random Forest, Gradient Boosting. Time-based split (train April to July, test August), no shuffling. |
 | 6 | `06_weather_ablation.py` | Same model, different feature sets, two test months (July and August). |
@@ -266,6 +305,7 @@ The build steps and every DAX measure are in [`powerbi/BUILD_GUIDE.md`](powerbi/
 | 13 | `13_error_analysis.py` | Pools the out-of-sample errors of the three validation months and summarises MAE, RMSE and bias by time of day, rain and temperature band. Does not feed the database. |
 | 14 | `14_lag_experiment.py` | Tests lagged-demand features (day ahead and one hour ahead) on the same rolling folds as step 9, built by `src/lags.py` from earlier hours only. Does not feed the database. |
 | 15 | `15_rain_experiment.py` | Tests a monotonic constraint on rain and recent-rain features (`src/rain_features.py`, from weather only) on the same rolling folds as step 9, and reports the bias on rainy hours. Does not feed the database. |
+| 16 | `16_year_transfer.py` | Trains the simulator model on 2026 only and scores it on 2025 (May to October) against two naive baselines, a year the model has never seen. Needs the 2025 tables (see "Run it"). Does not feed the database. |
 
 All paths, model settings, test months and the what-if grid are defined once in
 `src/config.py`, which every script imports. `src/conformal.py` holds the interval
@@ -281,11 +321,12 @@ and five reporting views. Primary keys, `CHECK` constraints and
 NOT NULL rules reject bad data at load time. The loader is idempotent (re-run it any time) and
 rolls back everything if a check fails. Checks include row counts against the CSVs, orphan
 hours, and a trip-count reconciliation: 236,330 trips fall before the weather period starts
-(January to March) and 11,298 fall in three hours with no weather measurement.
+(January to March) and 11,298 fall in three hours with no weather measurement. The 2025
+data is not loaded into the database.
 
 ### Tests
 
-`tests/` holds 40 automatic checks. 37 of them run in a few seconds without internet, the
+`tests/` holds 44 automatic checks. 41 of them run in a few seconds without internet, the
 large BIXI file or a database. The 25 checks of `tests/test_pipeline.py` verify, for example,
 that `features_hourly.csv` has no missing values and unique hours, that the simulator grid
 has exactly 16,632 rows (33 x 3 x 24 x 7), that at 22 °C dry weather beats light rain, which
@@ -297,7 +338,10 @@ pinned to an exact version. The 3 checks of `tests/test_lags.py` verify that lag
 only use earlier hours and that a missing hour gives a missing value instead of a shifted
 one. The 4 checks of `tests/test_rain_features.py` verify that the recent-rain features use
 only the current and earlier hours, that a missing hour gives a missing value, and that the
-constrained model never predicts more trips with more rain.
+constrained model never predicts more trips with more rain. The 4 checks of
+`tests/test_year_transfer.py` verify that the 2025 table has no missing value and unique
+hours, that no hour belongs to both the training year and the test year, that the 2025
+holidays are flagged and that every month compared is present.
 
 The 3 checks of `tests/test_postgres_integration.py` load the real CSVs into a PostgreSQL 16
 service with `08_load_postgres.py` (twice, to prove that it is idempotent), then verify the
@@ -343,6 +387,11 @@ python src/15_rain_experiment.py                       # optional: rain bias exp
 python src/01_extract_weather.py --station 7024745 --out data/processed/weather_mctavish.csv
 python src/12_station_comparison.py
 
+# optional: external test on 2025 (weather_2025.csv, airport station, is in data/processed)
+python src/02_aggregate_bixi.py data/raw/DonneesOuvertes2025_010203040506070809101112.zip --out data/processed/bixi_hourly_2025.csv
+python src/03_build_features.py --year 2025
+python src/16_year_transfer.py
+
 docker compose up -d                                   # local PostgreSQL 16
 python src/08_load_postgres.py                         # or --dsn / DATABASE_URL for another server
 
@@ -365,14 +414,14 @@ Then open Power BI Desktop and follow [`powerbi/BUILD_GUIDE.md`](powerbi/BUILD_G
 ## Repository layout
 
 ```
-src/                pipeline scripts 01 to 15, config.py (shared settings), conformal.py, lags.py, rain_features.py
-tests/              test_pipeline.py, test_config.py, test_lags.py, test_rain_features.py, test_postgres_integration.py, conftest.py (40 checks)
+src/                pipeline scripts 01 to 16, config.py (shared settings), conformal.py, lags.py, rain_features.py
+tests/              test_pipeline.py, test_config.py, test_lags.py, test_rain_features.py, test_year_transfer.py, test_postgres_integration.py, conftest.py (44 checks)
 .github/workflows/  tests.yml (runs the tests on every push, with a PostgreSQL 16 service)
 sql/                schema.sql (tables, constraints, views)
 powerbi/            build guide, DAX measures, theme, bixi_weather.pbix
 data/
-  raw/              BIXI file (not in git)
-  processed/        all intermediate and result CSVs
+  raw/              BIXI files (not in git)
+  processed/        all intermediate and result CSVs, including the 2025 tables
 figures/            charts 1 to 10
 docs/               architecture diagram and Power BI screenshots
 docker-compose.yml
@@ -384,6 +433,9 @@ requirements-dev.txt
 
 - **Time-based validation.** Hours are strongly autocorrelated, so a random split would leak
   the future into training. The model is always tested on a later month.
+- **A year the model never saw.** 2025 is used only as an external test. It is never used to
+  train, tune or choose a setting, so the result of step 16 is not a number the project was
+  adjusted to reach.
 - **Why the simulator uses temperature and rain only.** In the ablation study, calendar +
   temperature + rain (MAE 401) is almost as good as all weather variables (388), and, unlike
   humidity or pressure, a person can set both in a what-if question.
@@ -402,9 +454,10 @@ requirements-dev.txt
 
 ## Limitations
 
-- **One season, one year.** Only April to August 2026 is covered: nothing about autumn, winter
-  or other years. BIXI also ramps up through April (chart 4), so part of the "temperature
-  effect" is really seasonality and network growth. A longer history would separate them.
+- **One year of training.** The model is trained on April to August 2026 only. 2025 is used
+  as an external test: it works for May to August and underestimates September and October
+  by about 15%. Training on several years would separate the temperature effect from
+  seasonality and network growth (BIXI also ramps up through April, chart 4).
 - **One weather station for the whole city.** The pipeline uses the airport, not downtown.
   Comparing it with McTavish (downtown) changed the mean error by 0.3 trips/hour, so the choice
   does not matter for this model, but that was tested on one season and without a significance
@@ -423,7 +476,9 @@ requirements-dev.txt
   hours. A monotonic constraint and recent-rain features reduce this bias by only 5% and
   13%, so the simulator's rain scenarios probably still understate the real drop in demand,
   and its intervals are too narrow in the rain (83% coverage instead of 90%). Only 161 rainy
-  hours are available for the three validation months.
+  hours are available for the three validation months. On May-August 2025, with the model
+  trained on all of 2026, the bias on rainy hours is smaller (+148 trips/hour), so part of
+  it may come from the short training windows.
 - **The lag experiment is small.** Three feature sets, no tuning, training windows of 1,295
   to 2,710 hours, and 263 hours dropped for lack of history. The result "lags do not help a
   day ahead" may change with more data; it is not proven for other seasons.
@@ -439,9 +494,9 @@ requirements-dev.txt
 
 ## Data sources
 
-- Trips: BIXI Montréal open data, https://bixi.com/fr/donnees-ouvertes/ (not redistributed here; download the 2026 file from this page and put it in `data/raw/`).
+- Trips: BIXI Montréal open data, https://bixi.com/fr/donnees-ouvertes/ (not redistributed here; download the 2026 file from this page and put it in `data/raw/`). The 2025 file is used only for the external test of step 16.
 - Weather: Environment and Climate Change Canada, GeoMet-OGC API, `climate-hourly`
-  collection, station Montréal/Pierre Elliott Trudeau INTL (used by the pipeline) and station
-  McTavish (used only for the station comparison).
+  collection, station Montréal/Pierre Elliott Trudeau INTL (used by the pipeline, for 2026
+  and for the 2025 test) and station McTavish (used only for the station comparison).
 
 Please check each provider's terms of use before reusing the data.
