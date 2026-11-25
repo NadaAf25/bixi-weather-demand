@@ -8,6 +8,23 @@ on:
 jobs:
   pytest:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: bixi
+          POSTGRES_PASSWORD: bixi
+          POSTGRES_DB: bixi
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bixi -d bixi"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Throwaway database of the service above: enables tests/test_postgres_integration.py
+      TEST_DATABASE_URL: postgresql://bixi:bixi@localhost:5432/bixi
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
